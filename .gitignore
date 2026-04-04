@@ -1,0 +1,50 @@
+# Environment & Config
+.env
+*.env
+
+# Database & Logs
+*.db
+*.log
+*.log.*
+trades_log.csv
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+pip-log.txt
+*.egg-info/
+
+# Build & Distribution
+dist/
+build/
+*.spec
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project specific
+.active_trades
+.stop_trigger
+models/*.pkl
+
+# NEW: Sensitive Data Exclusions
+data/
+tradebot.db
+logs/
+TradeBot.spec
+build/
+dist/
+venv/
+.venv/
