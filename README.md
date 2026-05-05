@@ -1,6 +1,17 @@
 # TradeBot: Automated Systematic Trading & Risk Management Platform
 
+![Dashboard Preview](assets/Dashboard.png)
+
 A sophisticated algorithmic trading system designed for the Indian equity derivatives market (Nifty, BankNifty). This project focuses on eliminating emotional bias and enforcing strict risk-reward discipline through automated execution.
+
+## 📸 Interface Preview
+| Overview Dashboard | Trade History & Metrics |
+|---|---|
+| ![Dashboard](assets/Dashboard.png) | ![History](assets/TradeHistory.png) |
+
+| Strategy Configuration | 
+|---|
+| ![Config](assets/Config%20Page.png) | 
 
 ## 📊 Strategic Core
 - **Logic:** Multi-indicator confluence (EMA, RSI, Breakout) combined with ATR-based volatility analysis.
