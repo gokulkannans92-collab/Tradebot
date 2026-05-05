@@ -2,6 +2,11 @@
 .env
 *.env
 
+# SSL Keys (DO NOT COMMIT - use for HTTPS only in production)
+key.pem
+cert.pem
+*.pem
+
 # Database & Logs
 *.db
 *.log
@@ -39,12 +44,15 @@ Thumbs.db
 .stop_trigger
 models/*.pkl
 
-# NEW: Sensitive Data Exclusions
-data/
-tradebot.db
-logs/
-TradeBot.spec
+# --- PORTFOLIO PROTECTION ---
+# Ignore all Python source code for public profile
+*.py
+src/
+tests/
+scripts/
 build/
 dist/
 venv/
-.venv/
+.env
+*.db
+*.log
