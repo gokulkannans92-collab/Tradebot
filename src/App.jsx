@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
+const API_BASE = import.meta.env.VITE_API_BASE_URL
 
 function App() {
   const [userId, setUserId] = useState(localStorage.getItem('tradebot_user') || '')
