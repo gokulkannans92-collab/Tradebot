@@ -9,6 +9,12 @@ function App() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   
+  // Registration States
+  const [isRegistering, setIsRegistering] = useState(false)
+  const [displayName, setDisplayName] = useState('')
+  const [brokerType, setBrokerType] = useState('MOCK')
+  const [successMessage, setSuccessMessage] = useState('')
+  
   // Navigation
   const [activeTab, setActiveTab] = useState('overview')
   
@@ -283,6 +289,45 @@ function App() {
     }
   }
 
+  // Register handler
+  async function handleRegister(event) {
+    event.preventDefault()
+    setError('')
+    setSuccessMessage('')
+    if (!userId || !displayName || !password) {
+      setError('Please fill in all registration fields')
+      return
+    }
+    setLoading(true)
+
+    try {
+      const response = await fetch(`${API_BASE}/api/auth/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: userId,
+          name: displayName,
+          password: password,
+          broker_type: brokerType
+        })
+      })
+
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}))
+        throw new Error(body.detail || 'Registration failed')
+      }
+
+      setSuccessMessage('Account registered successfully! You can now log in.')
+      setIsRegistering(false) // Switch view back to login
+      setPassword('')
+      setDisplayName('')
+    } catch (err) {
+      setError(err.message || 'Registration request failed')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   // Login handler
   async function handleLogin(event) {
     event.preventDefault()
@@ -344,41 +389,161 @@ function App() {
             <p>Secure Enterprise Control Dashboard</p>
           </div>
 
+          {/* Tab Selection */}
+          <div className="login-tabs" style={{ display: 'flex', borderBottom: '1px solid rgba(255,255,255,0.1)', marginBottom: '16px', paddingBottom: '4px' }}>
+            <button 
+              onClick={() => { setIsRegistering(false); setError(''); setSuccessMessage(''); }}
+              style={{
+                flex: 1,
+                background: 'none',
+                border: 'none',
+                color: !isRegistering ? 'var(--color-primary, #89b4fa)' : 'var(--color-text-muted, #a6adc8)',
+                fontWeight: 'bold',
+                padding: '8px',
+                borderBottom: !isRegistering ? '2px solid var(--color-primary, #89b4fa)' : 'none',
+                cursor: 'pointer',
+                transition: 'all 0.3s ease'
+              }}
+            >
+              Sign In
+            </button>
+            <button 
+              onClick={() => { setIsRegistering(true); setError(''); setSuccessMessage(''); }}
+              style={{
+                flex: 1,
+                background: 'none',
+                border: 'none',
+                color: isRegistering ? 'var(--color-primary, #89b4fa)' : 'var(--color-text-muted, #a6adc8)',
+                fontWeight: 'bold',
+                padding: '8px',
+                borderBottom: isRegistering ? '2px solid var(--color-primary, #89b4fa)' : 'none',
+                cursor: 'pointer',
+                transition: 'all 0.3s ease'
+              }}
+            >
+              Create Account
+            </button>
+          </div>
+
           {error && (
-            <div className="alert-error">
+            <div className="alert-error" style={{ marginBottom: '12px' }}>
               <span>⚠️</span>
               {error}
             </div>
           )}
 
-          <form onSubmit={handleLogin} className="login-form">
-            <div className="form-group">
-              <label>Operator Username</label>
-              <input
-                value={userId}
-                onChange={(e) => setUserId(e.target.value)}
-                placeholder="Enter username"
-                autoComplete="username"
-                required
-              />
+          {successMessage && (
+            <div className="alert-success" style={{
+              background: 'rgba(166, 227, 161, 0.15)',
+              border: '1px solid #a6e3a1',
+              color: '#a6e3a1',
+              borderRadius: '8px',
+              padding: '12px',
+              fontSize: '0.85rem',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              marginBottom: '12px'
+            }}>
+              <span>✅</span>
+              {successMessage}
             </div>
+          )}
 
-            <div className="form-group">
-              <label>Security Password</label>
-              <input
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                type="password"
-                placeholder="••••••••"
-                autoComplete="current-password"
-                required
-              />
-            </div>
+          {!isRegistering ? (
+            /* Login Form */
+            <form onSubmit={handleLogin} className="login-form">
+              <div className="form-group">
+                <label>Operator Username</label>
+                <input
+                  value={userId}
+                  onChange={(e) => setUserId(e.target.value)}
+                  placeholder="Enter username"
+                  autoComplete="username"
+                  required
+                />
+              </div>
 
-            <button type="submit" className="btn btn-primary" style={{ marginTop: '12px' }} disabled={loading}>
-              {loading ? 'Authenticating…' : 'Enter Dashboard'}
-            </button>
-          </form>
+              <div className="form-group">
+                <label>Security Password</label>
+                <input
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  type="password"
+                  placeholder="••••••••"
+                  autoComplete="current-password"
+                  required
+                />
+              </div>
+
+              <button type="submit" className="btn btn-primary" style={{ marginTop: '12px' }} disabled={loading}>
+                {loading ? 'Authenticating…' : 'Enter Dashboard'}
+              </button>
+            </form>
+          ) : (
+            /* Registration Form */
+            <form onSubmit={handleRegister} className="login-form">
+              <div className="form-group">
+                <label>Desired Username (ID)</label>
+                <input
+                  value={userId}
+                  onChange={(e) => setUserId(e.target.value)}
+                  placeholder="e.g. admin123"
+                  required
+                />
+              </div>
+
+              <div className="form-group">
+                <label>Operator Full Name</label>
+                <input
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  placeholder="e.g. John Doe"
+                  required
+                />
+              </div>
+
+              <div className="form-group">
+                <label>Broker Integration Type</label>
+                <select
+                  value={brokerType}
+                  onChange={(e) => setBrokerType(e.target.value)}
+                  style={{
+                    width: '100%',
+                    height: '42px',
+                    borderRadius: '8px',
+                    background: 'rgba(255, 255, 255, 0.05)',
+                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                    color: 'white',
+                    padding: '0 12px',
+                    fontSize: '0.9rem',
+                    outline: 'none',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <option value="MOCK" style={{ background: '#1e1e2e', color: 'white' }}>Mock Trading (No Real Capital)</option>
+                  <option value="ANGEL" style={{ background: '#1e1e2e', color: 'white' }}>Angel One Integration</option>
+                  <option value="ZERODHA" style={{ background: '#1e1e2e', color: 'white' }}>Zerodha Kiteconnect</option>
+                  <option value="UPSTOX" style={{ background: '#1e1e2e', color: 'white' }}>Upstox Integration</option>
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label>Operator Password</label>
+                <input
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  type="password"
+                  placeholder="••••••••"
+                  required
+                />
+              </div>
+
+              <button type="submit" className="btn btn-primary" style={{ marginTop: '12px' }} disabled={loading}>
+                {loading ? 'Creating Account…' : 'Register Account'}
+              </button>
+            </form>
+          )}
         </div>
       </div>
     )
