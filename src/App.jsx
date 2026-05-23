@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'https://purple-performer-entrepreneur-sustained.trycloudflare.com'
 
 function App() {
   const [userId, setUserId] = useState(localStorage.getItem('tradebot_user') || '')
