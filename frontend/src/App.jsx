@@ -292,6 +292,11 @@ function App() {
         setEditedConfig(data)
         // Pre-populate risk from config
         if (data.risk_rules) setEditedRisk({ ...data.risk_rules })
+        // Sync client-side username with the canonical user ID (e.g. "admin") resolved from users.json
+        if (data.user_id && data.user_id !== userId) {
+          setUserId(data.user_id)
+          localStorage.setItem('tradebot_user', data.user_id)
+        }
       }
     } catch (e) { console.error('Config fetch failed:', e) }
   }
