@@ -9,6 +9,28 @@ function App() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   
+  // Password Visibility States
+  const [showLoginPassword, setShowLoginPassword] = useState(false)
+  const [showRegisterPassword, setShowRegisterPassword] = useState(false)
+
+  // Password Strength Helper
+  const getPasswordStrength = (pass) => {
+    if (!pass) return { score: 0, conditions: { length: false, upper: false, lower: false, number: false, special: false } };
+    
+    const conditions = {
+      length: pass.length >= 8,
+      upper: /[A-Z]/.test(pass),
+      lower: /[a-z]/.test(pass),
+      number: /[0-9]/.test(pass),
+      special: /[^A-Za-z0-9]/.test(pass) // any non-alphanumeric is special
+    };
+    
+    const score = Object.values(conditions).filter(Boolean).length;
+    return { score, conditions };
+  };
+
+  const { score: regPasswordScore, conditions: regPasswordConditions } = getPasswordStrength(password);
+  
   // Registration States
   const [isRegistering, setIsRegistering] = useState(false)
   const [displayName, setDisplayName] = useState('')
@@ -32,6 +54,7 @@ function App() {
   const [editedOperatorBroker, setEditedOperatorBroker] = useState('MOCK')
   const [editedOperatorActive, setEditedOperatorActive] = useState(true)
   const [editedOperatorRiskLimit, setEditedOperatorRiskLimit] = useState(15000)
+  const [editedOperatorPassword, setEditedOperatorPassword] = useState('')
   const [isControlCenterOpen, setIsControlCenterOpen] = useState(false)
   const [isNavigationOpen, setIsNavigationOpen] = useState(false)
   const [activeFilter, setActiveFilter] = useState('today')
@@ -286,6 +309,20 @@ function App() {
     setLoading(true)
     setError('')
     try {
+      const settingsPayload = {
+        name: editedOperatorName,
+        broker_type: editedOperatorBroker,
+        active: editedOperatorActive,
+        risk_rules: {
+          ...(config?.risk_rules || {}),
+          max_daily_loss: parseFloat(editedOperatorRiskLimit)
+        }
+      }
+
+      if (editedOperatorPassword.trim()) {
+        settingsPayload.password = editedOperatorPassword.trim()
+      }
+
       const res = await fetch(`${API_BASE}/api/v1/config`, {
         method: 'POST',
         headers: {
@@ -294,15 +331,7 @@ function App() {
         },
         body: JSON.stringify({
           user_id: userId,
-          settings: {
-            name: editedOperatorName,
-            broker_type: editedOperatorBroker,
-            active: editedOperatorActive,
-            risk_rules: {
-              ...(config?.risk_rules || {}),
-              max_daily_loss: parseFloat(editedOperatorRiskLimit)
-            }
-          }
+          settings: settingsPayload
         })
       })
       
@@ -312,6 +341,7 @@ function App() {
       }
       
       alert('Operator details updated successfully!')
+      setEditedOperatorPassword('') // Reset password input
       setIsEditingOperator(false)
       fetchConfig()
     } catch (err) {
@@ -601,14 +631,40 @@ function App() {
 
               <div className="form-group">
                 <label>Security Password</label>
-                <input
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  type="password"
-                  placeholder="••••••••"
-                  autoComplete="current-password"
-                  required
-                />
+                <div style={{ position: 'relative', width: '100%' }}>
+                  <input
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    type={showLoginPassword ? 'text' : 'password'}
+                    placeholder="••••••••"
+                    autoComplete="current-password"
+                    required
+                    style={{ width: '100%', paddingRight: '40px' }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowLoginPassword(!showLoginPassword)}
+                    style={{
+                      position: 'absolute',
+                      right: '12px',
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      background: 'none',
+                      border: 'none',
+                      color: showLoginPassword ? 'var(--color-primary, #89b4fa)' : 'rgba(255, 255, 255, 0.4)',
+                      cursor: 'pointer',
+                      fontSize: '1.2rem',
+                      padding: '0',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      outline: 'none'
+                    }}
+                    title={showLoginPassword ? 'Hide Password' : 'Show Password'}
+                  >
+                    👁️
+                  </button>
+                </div>
               </div>
 
               <button type="submit" className="btn btn-primary" style={{ marginTop: '12px' }} disabled={loading}>
@@ -665,16 +721,114 @@ function App() {
 
               <div className="form-group">
                 <label>Operator Password</label>
-                <input
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  type="password"
-                  placeholder="••••••••"
-                  required
-                />
+                <div style={{ position: 'relative', width: '100%' }}>
+                  <input
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    type={showRegisterPassword ? 'text' : 'password'}
+                    placeholder="••••••••"
+                    autoComplete="new-password"
+                    required
+                    style={{ width: '100%', paddingRight: '40px' }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowRegisterPassword(!showRegisterPassword)}
+                    style={{
+                      position: 'absolute',
+                      right: '12px',
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      background: 'none',
+                      border: 'none',
+                      color: showRegisterPassword ? 'var(--color-primary, #89b4fa)' : 'rgba(255, 255, 255, 0.4)',
+                      cursor: 'pointer',
+                      fontSize: '1.2rem',
+                      padding: '0',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      outline: 'none'
+                    }}
+                    title={showRegisterPassword ? 'Hide Password' : 'Show Password'}
+                  >
+                    👁️
+                  </button>
+                </div>
+
+                {/* Password Strength Meter Widget */}
+                {password && (
+                  <div className="password-strength-container" style={{ marginTop: '10px' }}>
+                    <div className="strength-label-row" style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: '#a6adc8', marginBottom: '6px' }}>
+                      <span>Password Strength:</span>
+                      <span style={{
+                        fontWeight: 'bold',
+                        color: regPasswordScore <= 1 ? '#f38ba8' :
+                               regPasswordScore <= 3 ? '#f9e2af' :
+                               regPasswordScore === 4 ? '#89b4fa' : '#a6e3a1'
+                      }}>
+                        {regPasswordScore <= 1 ? 'Weak' :
+                         regPasswordScore <= 3 ? 'Fair' :
+                         regPasswordScore === 4 ? 'Good' : 'Strong'}
+                      </span>
+                    </div>
+                    
+                    <div className="strength-meter-bar" style={{ display: 'flex', gap: '4px', height: '6px', width: '100%', marginBottom: '12px' }}>
+                      {[1, 2, 3, 4, 5].map((idx) => {
+                        const filled = idx <= regPasswordScore;
+                        let color = 'rgba(255, 255, 255, 0.1)';
+                        if (filled) {
+                          color = regPasswordScore <= 1 ? '#f38ba8' :
+                                  regPasswordScore <= 3 ? '#f9e2af' :
+                                  regPasswordScore === 4 ? '#89b4fa' : '#a6e3a1';
+                        }
+                        return (
+                          <div key={idx} style={{
+                            flex: 1,
+                            backgroundColor: color,
+                            borderRadius: '3px',
+                            transition: 'all 0.3s ease'
+                          }} />
+                        );
+                      })}
+                    </div>
+
+                    <div className="strength-checklist" style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '6px',
+                      fontSize: '0.8rem',
+                      background: 'rgba(255, 255, 255, 0.02)',
+                      border: '1px solid rgba(255, 255, 255, 0.05)',
+                      padding: '10px',
+                      borderRadius: '8px'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: regPasswordConditions.length ? '#a6e3a1' : '#a6adc8' }}>
+                        <span style={{ fontSize: '0.9rem' }}>{regPasswordConditions.length ? '✓' : '•'}</span>
+                        <span>At least 8 characters long</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: regPasswordConditions.upper ? '#a6e3a1' : '#a6adc8' }}>
+                        <span style={{ fontSize: '0.9rem' }}>{regPasswordConditions.upper ? '✓' : '•'}</span>
+                        <span>At least one uppercase letter (A-Z)</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: regPasswordConditions.lower ? '#a6e3a1' : '#a6adc8' }}>
+                        <span style={{ fontSize: '0.9rem' }}>{regPasswordConditions.lower ? '✓' : '•'}</span>
+                        <span>At least one lowercase letter (a-z)</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: regPasswordConditions.number ? '#a6e3a1' : '#a6adc8' }}>
+                        <span style={{ fontSize: '0.9rem' }}>{regPasswordConditions.number ? '✓' : '•'}</span>
+                        <span>At least one numerical digit (0-9)</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: regPasswordConditions.special ? '#a6e3a1' : '#a6adc8' }}>
+                        <span style={{ fontSize: '0.9rem' }}>{regPasswordConditions.special ? '✓' : '•'}</span>
+                        <span>At least one special character (e.g. !@#$%^&*)</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
-              <button type="submit" className="btn btn-primary" style={{ marginTop: '12px' }} disabled={loading}>
+              <button type="submit" className="btn btn-primary" style={{ marginTop: '12px' }} disabled={loading || regPasswordScore < 5}>
                 {loading ? 'Creating Account…' : 'Register Account'}
               </button>
             </form>
@@ -1441,6 +1595,17 @@ function App() {
                         placeholder="e.g. 10000"
                         required
                         min="1"
+                        style={{ height: '42px', borderRadius: '10px' }}
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label>New Security Password</label>
+                      <input
+                        type="password"
+                        value={editedOperatorPassword}
+                        onChange={(e) => setEditedOperatorPassword(e.target.value)}
+                        placeholder="Leave blank to keep unchanged"
                         style={{ height: '42px', borderRadius: '10px' }}
                       />
                     </div>
