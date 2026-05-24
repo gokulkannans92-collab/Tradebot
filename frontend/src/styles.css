@@ -211,6 +211,9 @@ body {
   margin-left: 300px;
   margin-right: 260px;
   flex-grow: 1;
+  width: calc(100vw - 560px);
+  max-width: calc(100vw - 560px);
+  min-width: 0;
   padding: 94px 40px 30px 40px;
   min-height: 100vh;
   display: flex;
@@ -1464,6 +1467,8 @@ body {
   .main-workspace {
     margin-left: 0 !important;
     margin-right: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
     padding-top: 80px !important;
     padding-left: 20px !important;
     padding-right: 20px !important;

@@ -1171,7 +1171,7 @@ function App() {
         {activeTab === 'management' && (
           <div>
             {/* Summary cards */}
-            <div className="overview-metrics-grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
+            <div className="overview-metrics-grid">
               {[
                 ['TOTAL USERS', '1', 'border-blue', 'text-primary'],
                 ['ACTIVE', config?.active ? '1' : '0', 'border-green', 'text-success'],
@@ -1586,7 +1586,7 @@ function App() {
         {activeTab === 'trades' && (
           <div>
             {/* Metric summary cards */}
-            <div className="overview-metrics-grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)', marginBottom: '20px' }}>
+            <div className="overview-metrics-grid" style={{ marginBottom: '20px' }}>
               <div className="overview-metric-card border-green">
                 <span className="card-lbl">PERIOD P&L</span>
                 <span className={`card-val ${periodPnL >= 0 ? 'text-success' : 'text-danger'}`}>₹{periodPnL >= 0 ? '+' : ''}{periodPnL.toFixed(0)}</span>
