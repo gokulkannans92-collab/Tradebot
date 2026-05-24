@@ -1,62 +1,22 @@
-# Python
-__pycache__/
-*.py[cod]
-*.pyo
-*.pyd
-.Python
-*.egg
-*.egg-info/
-dist/
-build/
-.eggs/
-*.pyc
-pip-log.txt
-pip-delete-this-directory.txt
-
-# Virtual environments
-.env
-.venv
-env/
-venv/
-ENV/
-
-# Environment files
-*.env
-.env.local
-.env.production
-
-# Node / Frontend
+# Dependencies
 frontend/node_modules/
+backend/node_modules/
+
+# Production builds
 frontend/dist/
-frontend/.vite/
-frontend/coverage/
 
-# Logs
-*.log
-logs/
-*.log.*
+# Local env files
+frontend/.env
+frontend/.env.local
+frontend/.env.production
+frontend/.env.development
+frontend/.env.staging
 
-# OS
-.DS_Store
-Thumbs.db
-desktop.ini
+backend/.env
+backend/.env.local
 
-# IDE
+# IDE/System files
 .vscode/
 .idea/
-*.swp
-*.swo
-
-# Data / Sensitive
-backend/data/*.json
-*.sqlite3
-*.db
-
-# SSL certs
-*.pem
-*.key
-*.crt
-
-# Secrets
-secrets.json
-config.secret.*
+.DS_Store
+Thumbs.db
