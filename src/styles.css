@@ -70,6 +70,106 @@ body {
   background: #0d0f18;
 }
 
+/* Desktop Header Bar styling */
+.desktop-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 64px;
+  background: rgba(8, 10, 18, 0.85);
+  border-bottom: 1px solid var(--border-glass);
+  backdrop-filter: blur(25px);
+  z-index: 190;
+  padding: 0 24px;
+}
+.desktop-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.brand-logo {
+  font-size: 1.6rem;
+  animation: bounceSlow 3s ease-in-out infinite;
+}
+.desktop-brand h2 {
+  font-size: 1.3rem;
+  font-weight: 800;
+  color: white;
+  letter-spacing: -0.5px;
+}
+.desktop-status-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(166, 227, 161, 0.04);
+  border: 1px solid rgba(166, 227, 161, 0.12);
+  padding: 6px 14px;
+  border-radius: 99px;
+}
+.status-bullet {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-success);
+  box-shadow: 0 0 6px var(--color-success);
+}
+.desktop-status-group .status-text {
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: var(--color-success);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.desktop-header-right {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+.quick-actions {
+  display: flex;
+  gap: 10px;
+}
+.quick-action-btn {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-glass);
+  border-radius: 8px;
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  font-size: 1rem;
+  color: white;
+  transition: var(--transition-smooth);
+  outline: none;
+}
+.quick-action-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.15);
+  transform: translateY(-1px);
+}
+.operator-header-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-glass);
+  padding: 6px 12px;
+  border-radius: 10px;
+}
+.badge-avatar {
+  font-size: 1rem;
+}
+.badge-name {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--color-text-bright);
+}
+
 /* 1. Left Sidebar: Control Center */
 .sidebar-control {
   width: 300px;
@@ -80,9 +180,9 @@ body {
   flex-direction: column;
   padding: 24px 20px;
   position: fixed;
-  height: 100vh;
+  height: calc(100vh - 64px);
   left: 0;
-  top: 0;
+  top: 64px;
   z-index: 100;
   overflow-y: auto;
   transition: var(--transition-smooth);
@@ -98,9 +198,9 @@ body {
   flex-direction: column;
   padding: 24px 20px;
   position: fixed;
-  height: 100vh;
+  height: calc(100vh - 64px);
   right: 0;
-  top: 0;
+  top: 64px;
   z-index: 100;
   overflow-y: auto;
   transition: var(--transition-smooth);
@@ -111,7 +211,7 @@ body {
   margin-left: 300px;
   margin-right: 260px;
   flex-grow: 1;
-  padding: 30px 40px;
+  padding: 94px 40px 30px 40px;
   min-height: 100vh;
   display: flex;
   flex-direction: column;
@@ -1331,11 +1431,17 @@ body {
 }
 
 @media (max-width: 1024px) {
+  .desktop-header {
+    display: none;
+  }
+  
   /* Hide sidebars on desktop view to switch into fully native mobile layouts */
   .sidebar-control {
     transform: translateX(-320px);
     width: 300px;
     z-index: 200;
+    top: 0 !important;
+    height: 100vh !important;
   }
   .sidebar-control.mobile-open {
     transform: translateX(0);
@@ -1345,6 +1451,8 @@ body {
     transform: translateX(280px);
     width: 260px;
     z-index: 200;
+    top: 0 !important;
+    height: 100vh !important;
   }
   .sidebar-nav.mobile-open {
     transform: translateX(0);

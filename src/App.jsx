@@ -700,6 +700,35 @@ function App() {
   // Main UI shell with navigation
   return (
     <div className="app-container">
+      {/* Desktop Top Header Bar */}
+      <header className="desktop-header">
+        <div className="desktop-brand">
+          <span className="brand-logo">🤖</span>
+          <h2>TradeBot <span className="pro-tag">Pro</span></h2>
+        </div>
+        
+        {/* System Status Ticker in Middle */}
+        <div className="desktop-status-group">
+          <span className="status-bullet"></span>
+          <span className="status-text">System Ready</span>
+        </div>
+        
+        <div className="desktop-header-right">
+          {/* Quick Actions */}
+          <div className="quick-actions">
+            <button className="quick-action-btn" onClick={() => setActiveTab('help')} title="Help Handbook">❓</button>
+            <button className="quick-action-btn" onClick={() => setActiveTab('settings')} title="Config Settings">⚙️</button>
+            <button className="quick-action-btn" onClick={handleLogout} title="Lock / Logout">🔒</button>
+          </div>
+          
+          {/* Operator Badge */}
+          <div className="operator-header-badge">
+            <span className="badge-avatar">👤</span>
+            <span className="badge-name">{config?.name || userId}</span>
+          </div>
+        </div>
+      </header>
+
       {/* Mobile Top Header Bar */}
       <header className="mobile-header">
         <button className="mobile-toggle-btn" onClick={() => setIsControlCenterOpen(!isControlCenterOpen)} title="Control Center">
