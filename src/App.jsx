@@ -25,6 +25,13 @@ function App() {
   const [config, setConfig] = useState(null)
   const [editedConfig, setEditedConfig] = useState(null)
   const [isEditing, setIsEditing] = useState(false)
+  
+  // Operator Editing States
+  const [isEditingOperator, setIsEditingOperator] = useState(false)
+  const [editedOperatorName, setEditedOperatorName] = useState('')
+  const [editedOperatorBroker, setEditedOperatorBroker] = useState('MOCK')
+  const [editedOperatorActive, setEditedOperatorActive] = useState(true)
+  const [editedOperatorRiskLimit, setEditedOperatorRiskLimit] = useState(15000)
   const [isControlCenterOpen, setIsControlCenterOpen] = useState(false)
   const [isNavigationOpen, setIsNavigationOpen] = useState(false)
   const [activeFilter, setActiveFilter] = useState('today')
@@ -270,6 +277,45 @@ function App() {
       fetchConfig()
     } catch (err) {
       setError(err.message || 'Failed to save configuration')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function handleSaveOperatorDetails() {
+    setLoading(true)
+    setError('')
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/config`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          user_id: userId,
+          settings: {
+            name: editedOperatorName,
+            broker_type: editedOperatorBroker,
+            active: editedOperatorActive,
+            risk_rules: {
+              ...(config?.risk_rules || {}),
+              max_daily_loss: parseFloat(editedOperatorRiskLimit)
+            }
+          }
+        })
+      })
+      
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(body.detail || 'Failed to update operator details')
+      }
+      
+      alert('Operator details updated successfully!')
+      setIsEditingOperator(false)
+      fetchConfig()
+    } catch (err) {
+      alert(err.message || 'Failed to save operator details')
     } finally {
       setLoading(false)
     }
@@ -1177,26 +1223,223 @@ function App() {
 
         {/* Tab: Operator User Management */}
         {activeTab === 'management' && (
-          <div className="glass-card">
-            <div className="panel-header">
-              <h3>Operator Authorization Log</h3>
-            </div>
-            <div className="management-card-grid">
-              <div className="operator-profile-card">
-                <div className="operator-header">
-                  <span className="operator-avatar">👤</span>
-                  <div>
-                    <h4>GK (Operator 01)</h4>
-                    <span className="pro-tag-badge">ADMIN</span>
-                  </div>
-                </div>
-                <div className="operator-meta">
-                  <p>Pipeline Status: <strong className="text-success">Active Connection</strong></p>
-                  <p>Brokerage: <strong>Angel One API</strong></p>
-                  <p>Risk Margin Deployed: <strong>₹1,00,000.00</strong></p>
-                </div>
+          <div>
+            {/* Row of 4 gorgeous metrics cards at the top */}
+            <div className="overview-metrics-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '24px' }}>
+              <div className="overview-metric-card border-blue">
+                <span className="card-lbl">TOTAL USERS</span>
+                <span className="card-val text-primary">1</span>
+                <span className="card-status">Stable</span>
+              </div>
+
+              <div className="overview-metric-card border-green">
+                <span className="card-lbl">ACTIVE</span>
+                <span className="card-val text-success">
+                  {config?.active ? 1 : 0}
+                </span>
+                <span className="card-status">Stable</span>
+              </div>
+
+              <div className="overview-metric-card border-pink">
+                <span className="card-lbl">INACTIVE</span>
+                <span className="card-val text-danger">
+                  {config?.active ? 0 : 1}
+                </span>
+                <span className="card-status">Stable</span>
+              </div>
+
+              <div className="overview-metric-card border-yellow">
+                <span className="card-lbl">ACTIVE RATE</span>
+                <span className="card-val text-warning">
+                  {config?.active ? '100%' : '0%'}
+                </span>
+                <span className="card-status">Stable</span>
               </div>
             </div>
+
+            {/* User Management Section */}
+            <div className="glass-card">
+              <div className="panel-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  👥 USER MANAGEMENT
+                </h3>
+                <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                  <input
+                    type="text"
+                    placeholder="Search..."
+                    className="terminal-search"
+                    style={{ width: '180px', height: '36px', borderRadius: '10px' }}
+                    disabled
+                  />
+                  <button 
+                    className="btn btn-success" 
+                    style={{ height: '36px', background: '#a6e3a1', color: '#0d0f18', fontWeight: 'bold' }}
+                    onClick={() => alert('Only one primary operator profile is supported in standalone mode.')}
+                  >
+                    + Add
+                  </button>
+                </div>
+              </div>
+
+              {/* Users Table */}
+              <div className="table-widget">
+                <table className="custom-table">
+                  <thead>
+                    <tr>
+                      <th>NAME</th>
+                      <th>USER ID</th>
+                      <th>BROKER</th>
+                      <th>STATUS</th>
+                      <th>RISK LIMIT</th>
+                      <th>LAST LOGIN</th>
+                      <th style={{ textAlign: 'center' }}>ACTIONS</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td style={{ fontWeight: 'bold', color: 'white' }}>{config?.name || userId}</td>
+                      <td style={{ fontFamily: 'var(--font-mono)' }}>{config?.user_id || userId}</td>
+                      <td>
+                        <span className="badge success" style={{ background: 'rgba(137, 180, 250, 0.15)', color: '#89b4fa', borderColor: '#89b4fa' }}>
+                          {config?.broker_type || 'MOCK'}
+                        </span>
+                      </td>
+                      <td>
+                        <span className={`badge ${config?.active ? 'success' : 'danger'}`}>
+                          {config?.active ? '☑ Active' : '☒ Inactive'}
+                        </span>
+                      </td>
+                      <td style={{ fontWeight: '600' }}>
+                        ₹{(config?.risk_rules?.max_daily_loss || 15000).toLocaleString('en-IN')}
+                      </td>
+                      <td style={{ color: 'var(--color-text-muted)' }}>Never</td>
+                      <td style={{ textAlign: 'center' }}>
+                        <button 
+                          className="logout-btn" 
+                          style={{ 
+                            background: 'rgba(255, 255, 255, 0.05)', 
+                            border: '1px solid var(--border-glass)', 
+                            borderRadius: '50%', 
+                            width: '36px', 
+                            height: '36px', 
+                            display: 'inline-grid', 
+                            placeItems: 'center', 
+                            cursor: 'pointer',
+                            fontSize: '1rem',
+                            color: 'white',
+                            transition: 'all 0.3s ease'
+                          }}
+                          onClick={() => {
+                            setEditedOperatorName(config?.name || userId);
+                            setEditedOperatorBroker(config?.broker_type || 'MOCK');
+                            setEditedOperatorActive(config?.active ?? true);
+                            setEditedOperatorRiskLimit(config?.risk_rules?.max_daily_loss || 15000);
+                            setIsEditingOperator(true);
+                          }}
+                          title="Edit Operator details"
+                        >
+                          ✏️
+                        </button>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Operator Edit Modal overlay */}
+            {isEditingOperator && (
+              <div className="login-overlay" style={{ background: 'rgba(0,0,0,0.7)', zIndex: 999 }}>
+                <div className="login-card" style={{ maxWidth: '480px', width: '100%' }}>
+                  <div className="login-brand" style={{ marginBottom: '24px' }}>
+                    <div className="login-brand-icon" style={{ fontSize: '2.5rem' }}>👤</div>
+                    <h2>Edit Operator Profile</h2>
+                    <p>Modify credentials and risk profiles in users.json</p>
+                  </div>
+
+                  <form onSubmit={(e) => { e.preventDefault(); handleSaveOperatorDetails(); }} className="login-form" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                    <div className="form-group">
+                      <label>Operator Full Name</label>
+                      <input
+                        value={editedOperatorName}
+                        onChange={(e) => setEditedOperatorName(e.target.value)}
+                        placeholder="e.g. GK"
+                        required
+                        style={{ height: '42px', borderRadius: '10px' }}
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label>Operator User ID (Read-only)</label>
+                      <input
+                        value={config?.user_id || userId}
+                        disabled
+                        style={{ height: '42px', borderRadius: '10px', background: 'rgba(255,255,255,0.02)', cursor: 'not-allowed' }}
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label>Active Broker Integration</label>
+                      <select
+                        value={editedOperatorBroker}
+                        onChange={(e) => setEditedOperatorBroker(e.target.value)}
+                        style={{
+                          width: '100%',
+                          height: '42px',
+                          borderRadius: '10px',
+                          background: '#11131c',
+                          border: '1px solid var(--border-glass)',
+                          color: 'white',
+                          padding: '0 12px',
+                          fontSize: '0.9rem',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <option value="MOCK">MOCK</option>
+                        <option value="ANGEL">ANGEL</option>
+                        <option value="ZERODHA">ZERODHA</option>
+                        <option value="UPSTOX">UPSTOX</option>
+                        <option value="GROWW">GROWW</option>
+                      </select>
+                    </div>
+
+                    <div className="form-group">
+                      <label>Daily Volatility Risk Limit (₹)</label>
+                      <input
+                        type="number"
+                        value={editedOperatorRiskLimit}
+                        onChange={(e) => setEditedOperatorRiskLimit(e.target.value)}
+                        placeholder="e.g. 10000"
+                        required
+                        min="1"
+                        style={{ height: '42px', borderRadius: '10px' }}
+                      />
+                    </div>
+
+                    <div className="form-group" style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: '10px', padding: '8px 0' }}>
+                      <label className="checkbox-row-dark" style={{ cursor: 'pointer' }}>
+                        <input
+                          type="checkbox"
+                          checked={editedOperatorActive}
+                          onChange={(e) => setEditedOperatorActive(e.target.checked)}
+                        />
+                        <span className="checkbox-custom" style={{ width: '20px', height: '20px', background: '#11131c' }}></span>
+                        <span className="checkbox-label" style={{ fontSize: '0.9rem', marginLeft: '6px' }}>Operator Account Active</span>
+                      </label>
+                    </div>
+
+                    <div className="form-actions" style={{ display: 'flex', gap: '12px', marginTop: '12px' }}>
+                      <button type="submit" className="btn btn-primary" style={{ flex: 1, height: '44px' }} disabled={loading}>
+                        {loading ? 'Saving…' : '💾 Save Details'}
+                      </button>
+                      <button type="button" className="btn btn-secondary" style={{ flex: 1, height: '44px' }} onClick={() => setIsEditingOperator(false)} disabled={loading}>
+                        Cancel
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
