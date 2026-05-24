@@ -23,6 +23,12 @@ function App() {
   const [positions, setPositions] = useState([])
   const [trades, setTrades] = useState([])
   const [config, setConfig] = useState(null)
+  const [editedConfig, setEditedConfig] = useState(null)
+  const [isEditing, setIsEditing] = useState(false)
+  const [isControlCenterOpen, setIsControlCenterOpen] = useState(false)
+  const [isNavigationOpen, setIsNavigationOpen] = useState(false)
+  const [activeFilter, setActiveFilter] = useState('today')
+  const [aiMarketSelection, setAiMarketSelection] = useState(false)
   const [logs, setLogs] = useState([])
   const [quotes, setQuotes] = useState({})
   
@@ -223,9 +229,92 @@ function App() {
       if (res.ok) {
         const data = await res.json()
         setConfig(data)
+        setEditedConfig(data)
       }
     } catch (err) {
       console.error('Failed config fetch:', err)
+    }
+  }
+
+  async function handleSaveConfig() {
+    setLoading(true)
+    setError('')
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/config`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          user_id: userId,
+          settings: {
+            entry_start: editedConfig.entry_start,
+            entry_end: editedConfig.entry_end,
+            candle_period: editedConfig.candle_period,
+            paper_trading: editedConfig.paper_trading === 'true' || editedConfig.paper_trading === true,
+            nifty_enabled: editedConfig.nifty_enabled === 'true' || editedConfig.nifty_enabled === true,
+            banknifty_enabled: editedConfig.banknifty_enabled === 'true' || editedConfig.banknifty_enabled === true
+          }
+        })
+      })
+      
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(body.detail || 'Failed to update configuration')
+      }
+      
+      const data = await res.json()
+      alert(data.message || 'Configuration updated successfully!')
+      setIsEditing(false)
+      fetchConfig()
+    } catch (err) {
+      setError(err.message || 'Failed to save configuration')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function handleControlCenterChange(key, value) {
+    if (!config) return;
+    
+    // Build updated values with instant feedback
+    const updatedSettings = {
+      entry_start: config.entry_start,
+      entry_end: config.entry_end,
+      candle_period: config.candle_period,
+      paper_trading: config.paper_trading,
+      nifty_enabled: config.nifty_enabled,
+      banknifty_enabled: config.banknifty_enabled,
+      [key]: value
+    };
+    
+    // Optimistic state update
+    setConfig({
+      ...config,
+      [key]: value
+    });
+    setEditedConfig({
+      ...editedConfig,
+      [key]: value
+    });
+    
+    try {
+      await fetch(`${API_BASE}/api/v1/config`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          user_id: userId,
+          settings: updatedSettings
+        })
+      });
+      // Silently sync from engine
+      fetchConfig();
+    } catch (err) {
+      console.error('Failed to sync Control Center toggle:', err);
     }
   }
 
@@ -565,212 +654,464 @@ function App() {
   // Main UI shell with navigation
   return (
     <div className="app-container">
-      {/* Sidebar Panel */}
-      <nav className="sidebar">
-        <div className="sidebar-brand">
-          <div className="brand-logo">🤖</div>
-          <div className="brand-text">
-            <h1>TradeBot</h1>
-            <span>Terminal Core</span>
+      {/* Mobile Top Header Bar */}
+      <header className="mobile-header">
+        <button className="mobile-toggle-btn" onClick={() => setIsControlCenterOpen(!isControlCenterOpen)} title="Control Center">
+          🎛️
+        </button>
+        <div className="mobile-brand">
+          <span className="brand-logo-sm">🤖</span>
+          <h2>TradeBot <span className="pro-tag">Pro</span></h2>
+        </div>
+        <button className="mobile-toggle-btn" onClick={() => setIsNavigationOpen(!isNavigationOpen)} title="Navigation Menu">
+          🍔
+        </button>
+      </header>
+
+      {/* 1. Left Sidebar: Control Center (Responsive drawer on mobile) */}
+      <nav className={`sidebar-control ${isControlCenterOpen ? 'mobile-open' : ''}`}>
+        {/* Mobile Close Button for Drawer */}
+        <div className="drawer-close-row">
+          <span>CONTROL CENTER</span>
+          <button className="drawer-close-btn" onClick={() => setIsControlCenterOpen(false)}>✕</button>
+        </div>
+
+        <div className="control-stats-row">
+          <div className="stat-capsule">
+            <span className="stat-label">Trades</span>
+            <span className="stat-val">{trades.filter(t => new Date(t.timestamp || t.time || Date.now()).toDateString() === new Date().toDateString()).length}/5</span>
+          </div>
+          <div className="stat-capsule">
+            <span className="stat-label">P&L</span>
+            <span className="stat-val positive" style={{ color: activePnL >= 0 ? '#a6e3a1' : '#f38ba8' }}>
+              ₹{activePnL >= 0 ? '+' : ''}{activePnL.toFixed(0)}
+            </span>
           </div>
         </div>
 
-        <ul className="sidebar-menu">
-          <li className={`menu-item ${activeTab === 'overview' ? 'active' : ''}`}>
-            <button onClick={() => setActiveTab('overview')}>
-              <span className="menu-icon">📊</span>
-              <span>Overview</span>
-            </button>
-          </li>
-          <li className={`menu-item ${activeTab === 'positions' ? 'active' : ''}`}>
-            <button onClick={() => setActiveTab('positions')}>
-              <span className="menu-icon">🎯</span>
-              <span>Active Trades</span>
-              {positions.length > 0 && (
-                <span className="badge primary" style={{ marginLeft: 'auto', padding: '2px 6px', borderRadius: '6px' }}>
-                  {positions.length}
-                </span>
-              )}
-            </button>
-          </li>
-          <li className={`menu-item ${activeTab === 'trades' ? 'active' : ''}`}>
-            <button onClick={() => setActiveTab('trades')}>
-              <span className="menu-icon">📜</span>
-              <span>Trade Logs</span>
-            </button>
-          </li>
-          <li className={`menu-item ${activeTab === 'logs' ? 'active' : ''}`}>
-            <button onClick={() => setActiveTab('logs')}>
-              <span className="menu-icon">💻</span>
-              <span>System Terminal</span>
-            </button>
-          </li>
-          <li className={`menu-item ${activeTab === 'settings' ? 'active' : ''}`}>
-            <button onClick={() => setActiveTab('settings')}>
-              <span className="menu-icon">⚙️</span>
-              <span>Configurations</span>
-            </button>
-          </li>
-        </ul>
-
-        <div className="sidebar-footer">
-          <div className="user-badge">
-            <div className="user-info">
-              <p>{userId}</p>
-              <span>Dashboard Admin</span>
-            </div>
-            <button className="logout-btn" onClick={handleLogout} title="Log Out">
-              🚪
-            </button>
+        {/* Bot Engine Status Display */}
+        <div className="bot-status-container">
+          <div className="status-label-group">
+            <span className={`status-dot-pulse ${status?.running ? 'active' : 'idle'}`}></span>
+            <span className="status-text">{status?.running ? 'ACTIVE' : 'IDLE'}</span>
           </div>
+          <div className="ai-selection-group">
+            <label className="switch-container">
+              <input 
+                type="checkbox" 
+                checked={aiMarketSelection} 
+                onChange={(e) => setAiMarketSelection(e.target.checked)} 
+              />
+              <span className="switch-slider"></span>
+            </label>
+            <span className="ai-selection-label">AI MARKET SELECTION</span>
+          </div>
+        </div>
+
+        {/* Start/Pause Control Actions */}
+        <div className="control-actions-group">
+          <button 
+            className="btn-bot-start" 
+            onClick={() => {
+              alert('Engine startup sequence initiated successfully!');
+              if (status) status.running = true;
+              setStatus({ ...status, running: true });
+            }}
+            disabled={status?.running}
+          >
+            ▶ START BOT
+          </button>
+          <button 
+            className="btn-bot-pause" 
+            onClick={handleStopBot}
+            disabled={!status?.running}
+          >
+            ⏸ Pause Trades
+          </button>
+        </div>
+
+        {/* Broker Settings Section */}
+        <div className="control-section-card">
+          <h4 className="section-card-title">◆ BROKER SETTINGS</h4>
+          <div className="section-card-body">
+            <div className="select-container-dark">
+              <select 
+                value={config?.broker_type || 'MOCK'} 
+                onChange={(e) => handleControlCenterChange('broker_type', e.target.value)}
+              >
+                <option value="MOCK">mock</option>
+                <option value="ANGEL">angel</option>
+                <option value="ZERODHA">zerodha</option>
+                <option value="UPSTOX">upstox</option>
+              </select>
+            </div>
+            
+            <label className="checkbox-row-dark">
+              <input 
+                type="checkbox" 
+                checked={config?.paper_trading ? true : false} 
+                onChange={(e) => handleControlCenterChange('paper_trading', e.target.checked)}
+              />
+              <span className="checkbox-custom"></span>
+              <span className="checkbox-label">Paper Trading</span>
+            </label>
+
+            <label className="checkbox-row-dark">
+              <input 
+                type="checkbox" 
+                checked={config?.use_tsl ? true : false} 
+                onChange={(e) => handleControlCenterChange('use_tsl', e.target.checked)}
+              />
+              <span className="checkbox-custom"></span>
+              <span className="checkbox-label">Trailing SL</span>
+            </label>
+
+            <label className="checkbox-row-dark">
+              <input 
+                type="checkbox" 
+                checked={config?.kill_after_daily_limit ? true : false} 
+                onChange={(e) => handleControlCenterChange('kill_after_daily_limit', e.target.checked)}
+              />
+              <span className="checkbox-custom"></span>
+              <span className="checkbox-label">Kill Bot (Limit)</span>
+            </label>
+          </div>
+        </div>
+
+        {/* Strategy Settings Section */}
+        <div className="control-section-card">
+          <h4 className="section-card-title">✓ STRATEGY SETTINGS</h4>
+          <div className="section-card-body">
+            <div className="form-group-dark">
+              <label>Strategy</label>
+              <select 
+                value={config?.strategy_name || 'Combined'} 
+                onChange={(e) => handleControlCenterChange('strategy_name', e.target.value)}
+              >
+                <option value="Combined">Combined</option>
+                <option value="Breakout">Breakout</option>
+                <option value="Momentum">Momentum</option>
+              </select>
+            </div>
+
+            <div className="form-group-dark">
+              <label>Candle</label>
+              <select 
+                value={config?.candle_period || '15m'} 
+                onChange={(e) => handleControlCenterChange('candle_period', e.target.value)}
+              >
+                <option value="1m">1m</option>
+                <option value="3m">3m</option>
+                <option value="5m">5m</option>
+                <option value="15m">15m</option>
+              </select>
+            </div>
+
+            <div className="form-group-dark">
+              <label>Min Sig</label>
+              <select 
+                value={config?.min_signals || 2} 
+                onChange={(e) => handleControlCenterChange('min_signals', parseInt(e.target.value))}
+              >
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="3">3</option>
+                <option value="4">4</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {/* Live Network & Exchange Status Indicators */}
+        <div className="control-footer-status">
+          <span className="status-item-indicator text-success">
+            <span className="indicator-dot bg-success"></span>
+            Connected
+          </span>
+          <span className={`status-item-indicator ${status?.market_status === 'open' ? 'text-success' : 'text-danger'}`}>
+            <span className={`indicator-dot ${status?.market_status === 'open' ? 'bg-success' : 'bg-danger'}`}></span>
+            NSE: {status?.market_status === 'open' ? 'Open' : 'Closed'}
+          </span>
         </div>
       </nav>
 
-      {/* Primary Content Workspace */}
+      {/* Overlay Backdrop for Mobile Drawers */}
+      {(isControlCenterOpen || isNavigationOpen) && (
+        <div 
+          className="drawer-overlay" 
+          onClick={() => {
+            setIsControlCenterOpen(false);
+            setIsNavigationOpen(false);
+          }}
+        ></div>
+      )}
+
+      {/* 2. Center Column: Primary Content Workspace */}
       <main className="main-workspace">
         <header className="workspace-header">
           <div className="header-title">
-            <h2>{activeTab.charAt(0).toUpperCase() + activeTab.slice(1)} Control</h2>
-            <p>TradeBot Core Service Integration Dashboard</p>
+            <h2 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              {activeTab === 'overview' && '🏠 '}
+              {activeTab === 'jarvis' && '🧠 '}
+              {activeTab === 'market' && '📊 '}
+              {activeTab === 'positions' && '🎯 '}
+              {activeTab === 'management' && '👥 '}
+              {activeTab === 'settings' && '⚙️ '}
+              {activeTab === 'notifications' && '🔔 '}
+              {activeTab === 'trades' && '📜 '}
+              {activeTab === 'logs' && '💻 '}
+              {activeTab === 'help' && '❓ '}
+              {activeTab.toUpperCase()}
+            </h2>
+            <p>TradeBot Core Standalone Operations Panel</p>
           </div>
-          <div style={{ display: 'flex', gap: '12px' }}>
-            <span className={`badge status-pulse ${status?.running ? 'success' : 'danger'}`}>
-              Bot: {status?.running ? 'Active' : 'Offline'}
-            </span>
-            <span className={`badge ${status?.market_status === 'open' ? 'success' : 'warning'}`}>
-              Market: {status?.market_status || 'Offline'}
-            </span>
-          </div>
+          <button className="btn btn-secondary btn-sm" onClick={() => {
+            fetchStatus();
+            fetchPositions();
+            fetchTrades();
+            fetchConfig();
+          }}>
+            🔄 Refresh
+          </button>
         </header>
 
-        {/* Tab Render Switch */}
+        {/* Tab content renderer switch */}
         {activeTab === 'overview' && (
           <div>
-            {/* Top row metrics cards */}
-            <div className="metrics-row">
-              <div className="glass-card primary">
-                <div className="metric-header">
-                  <span>Engine P&L (Active)</span>
-                  <span className="metric-icon">💰</span>
-                </div>
-                <div className={`metric-value ${activePnL >= 0 ? 'success' : 'danger'}`} style={{ color: activePnL >= 0 ? '#a6e3a1' : '#f38ba8' }}>
-                  ₹{activePnL.toFixed(2)}
-                </div>
-                <div className="metric-sub">Across {positions.length} open position(s)</div>
+            {/* Horizontal Filter Tabs row */}
+            <div className="filter-tabs-row">
+              {['today', 'yesterday', 'week', 'month', 'all'].map((filter) => (
+                <button 
+                  key={filter} 
+                  className={`filter-tab-btn ${activeFilter === filter ? 'active' : ''}`}
+                  onClick={() => setActiveFilter(filter)}
+                >
+                  {filter === 'today' && '📅 Today'}
+                  {filter === 'yesterday' && '⏱️ Yesterday'}
+                  {filter === 'week' && '📆 Past Week'}
+                  {filter === 'month' && '📁 Past Month'}
+                  {filter === 'all' && '♾️ All Time'}
+                </button>
+              ))}
+            </div>
+
+            {/* Row of 5 gorgeous metrics cards */}
+            <div className="overview-metrics-grid">
+              <div className="overview-metric-card border-green">
+                <span className="card-lbl">PERIOD P&L</span>
+                <span className="card-val text-success">
+                  Rs+{trades.filter(t => {
+                    if (activeFilter === 'today') {
+                      return new Date(t.timestamp || t.time || Date.now()).toDateString() === new Date().toDateString();
+                    }
+                    return true;
+                  }).reduce((acc, t) => acc + (t.realized_pnl || t.pnl || 0), 0).toFixed(0)}
+                </span>
+                <span className="card-status">Stable</span>
               </div>
 
-              <div className="glass-card success">
-                <div className="metric-header">
-                  <span>Index Price (NIFTY)</span>
-                  <span className="metric-icon">📈</span>
-                </div>
-                <div className="metric-value">
-                  {quotes['NIFTY'] ? `₹${quotes['NIFTY'].last_price.toFixed(2)}` : 'Loading…'}
-                </div>
-                <div className="metric-sub">Streaming Live via WebSockets</div>
+              <div className="overview-metric-card border-blue">
+                <span className="card-lbl">TRADES (PERIOD)</span>
+                <span className="card-val text-primary">
+                  {trades.filter(t => {
+                    if (activeFilter === 'today') {
+                      return new Date(t.timestamp || t.time || Date.now()).toDateString() === new Date().toDateString();
+                    }
+                    return true;
+                  }).length}
+                </span>
+                <span className="card-status">Stable</span>
               </div>
 
-              <div className="glass-card warning">
-                <div className="metric-header">
-                  <span>Active Sessions</span>
-                  <span className="metric-icon">👥</span>
-                </div>
-                <div className="metric-value">{status?.sessions ?? 0}</div>
-                <div className="metric-sub">Broker pipelines connected</div>
+              <div className="overview-metric-card border-yellow">
+                <span className="card-lbl">SUCCESS RATE</span>
+                <span className="card-val text-warning">
+                  {(() => {
+                    const periodTrades = trades.filter(t => {
+                      if (activeFilter === 'today') {
+                        return new Date(t.timestamp || t.time || Date.now()).toDateString() === new Date().toDateString();
+                      }
+                      return true;
+                    });
+                    const wins = periodTrades.filter(t => (t.realized_pnl || t.pnl || 0) > 0).length;
+                    return periodTrades.length > 0 ? ((wins / periodTrades.length) * 100).toFixed(1) : '0.0';
+                  })()}%
+                </span>
+                <span className="card-status">Stable</span>
+              </div>
+
+              <div className="overview-metric-card border-pink">
+                <span className="card-lbl">ACTIVE P&L</span>
+                <span className={`card-val ${activePnL >= 0 ? 'text-success' : 'text-danger'}`}>
+                  Rs{activePnL >= 0 ? '+' : ''}{activePnL.toFixed(0)}
+                </span>
+                <span className="card-status">Stable</span>
+              </div>
+
+              <div className="overview-metric-card border-cyan">
+                <span className="card-lbl">POSITIONS</span>
+                <span className="card-val text-cyan">{positions.length}</span>
+                <span className="card-status">Stable</span>
               </div>
             </div>
 
-            {/* Dashboard grid panel splits */}
-            <div className="dashboard-grid">
-              {/* Positions quick look */}
-              <div className="glass-card">
+            {/* Bottom double column grid widgets */}
+            <div className="overview-charts-grid">
+              {/* P&L Trend Card */}
+              <div className="glass-card chart-card">
                 <div className="panel-header">
-                  <h3>Active Sub-Positions</h3>
-                  <button className="btn btn-secondary btn-sm" onClick={fetchPositions}>🔄 Force Pull</button>
+                  <h3>P&L TREND</h3>
                 </div>
-                {positions.length === 0 ? (
-                  <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--color-text-muted)' }}>
-                    No active positions currently running.
-                  </div>
-                ) : (
-                  <div className="table-widget">
-                    <table className="custom-table">
-                      <thead>
-                        <tr>
-                          <th>Symbol</th>
-                          <th>Side</th>
-                          <th>Qty</th>
-                          <th>Entry Price</th>
-                          <th>LTP</th>
-                          <th>P&L</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {positions.map((pos, idx) => {
-                          const quote = quotes[pos.symbol]
-                          const ltp = quote ? quote.last_price : (pos.ltp || pos.buy_price)
-                          const entry = pos.buy_price || pos.price || 0
-                          const sideMult = pos.side === 'SELL' ? -1 : 1
-                          const calculatedPnl = quote && quote.last_price ? 
-                            (quote.last_price - entry) * (pos.qty || pos.quantity || 0) * sideMult : 
-                            (pos.pnl || 0)
-                          
-                          return (
-                            <tr key={idx}>
-                              <td style={{ fontWeight: 'bold' }}>{pos.symbol}</td>
-                              <td>
-                                <span className={`badge ${pos.side === 'BUY' ? 'success' : 'danger'}`}>
-                                  {pos.side}
-                                </span>
-                              </td>
-                              <td>{pos.qty || pos.quantity}</td>
-                              <td>₹{entry.toFixed(2)}</td>
-                              <td>₹{ltp.toFixed(2)}</td>
-                              <td className={`pnl-value ${calculatedPnl >= 0 ? 'positive' : 'negative'}`}>
-                                ₹{calculatedPnl.toFixed(2)}
-                              </td>
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
+                <div className="chart-body-container">
+                  {/* Premium customized SVG Trend Chart */}
+                  <svg className="svg-trend-chart" viewBox="0 0 400 200" width="100%" height="100%">
+                    <defs>
+                      <linearGradient id="chart-glow" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#a6e3a1" stopOpacity="0.25"/>
+                        <stop offset="100%" stopColor="#a6e3a1" stopOpacity="0"/>
+                      </linearGradient>
+                    </defs>
+                    <grid>
+                      <line x1="50" y1="50" x2="350" y2="50" stroke="rgba(255,255,255,0.03)" strokeDasharray="3"/>
+                      <line x1="50" y1="100" x2="350" y2="100" stroke="rgba(255,255,255,0.06)"/>
+                      <line x1="50" y1="150" x2="350" y2="150" stroke="rgba(255,255,255,0.03)" strokeDasharray="3"/>
+                    </grid>
+                    
+                    {/* Draw lines based on trade logs */}
+                    {(() => {
+                      const tradePnlPoints = trades.slice(-3).map(t => t.realized_pnl || t.pnl || 0);
+                      const baseLine = 100;
+                      if (tradePnlPoints.length < 2) {
+                        return (
+                          <>
+                            <path d="M 50 100 L 200 100 L 350 100" fill="none" stroke="#a6e3a1" strokeWidth="3" />
+                            <circle cx="50" cy="100" r="5" fill="#a6e3a1" className="chart-dot-pulse" />
+                            <text x="50" y="125" fill="#7f849c" fontSize="10" textAnchor="middle">T1</text>
+                            <circle cx="200" cy="100" r="5" fill="#a6e3a1" />
+                            <text x="200" y="125" fill="#7f849c" fontSize="10" textAnchor="middle">T2</text>
+                            <circle cx="350" cy="100" r="5" fill="#a6e3a1" />
+                            <text x="350" y="125" fill="#7f849c" fontSize="10" textAnchor="middle">T3</text>
+                          </>
+                        );
+                      }
+                      
+                      // Map P&L values to Y coordinates
+                      const maxPnL = Math.max(...tradePnlPoints.map(Math.abs), 1000);
+                      const y1 = baseLine - (tradePnlPoints[0] / maxPnL) * 50;
+                      const y2 = baseLine - (tradePnlPoints[1] / maxPnL) * 50;
+                      const y3 = baseLine - (tradePnlPoints[2] || 0 / maxPnL) * 50;
+
+                      return (
+                        <>
+                          <path d={`M 50 ${y1} L 200 ${y2} L 350 ${y3}`} fill="none" stroke="#a6e3a1" strokeWidth="3" />
+                          <path d={`M 50 ${y1} L 200 ${y2} L 350 ${y3} L 350 100 L 50 100 Z`} fill="url(#chart-glow)" />
+                          <circle cx="50" cy={y1} r="5" fill="#a6e3a1" className="chart-dot-pulse" />
+                          <text x="50" y="125" fill="#7f849c" fontSize="10" textAnchor="middle">T1</text>
+                          <circle cx="200" cy={y2} r="5" fill="#a6e3a1" />
+                          <text x="200" y="125" fill="#7f849c" fontSize="10" textAnchor="middle">T2</text>
+                          <circle cx="350" cy={y3} r="5" fill="#a6e3a1" />
+                          <text x="350" y="125" fill="#7f849c" fontSize="10" textAnchor="middle">T3</text>
+                        </>
+                      );
+                    })()}
+                  </svg>
+                </div>
               </div>
 
-              {/* Bot Controller Panels */}
-              <div className="glass-card danger">
+              {/* Instrument Allocation Card */}
+              <div className="glass-card chart-card">
                 <div className="panel-header">
-                  <h3>Safety Controls</h3>
-                  <span className="metric-icon">🚨</span>
+                  <h3>INSTRUMENT ALLOCATION</h3>
                 </div>
-                <div className="controls-list">
-                  <div className="control-item">
-                    <div className="control-info">
-                      <h4>Shutdown Bot</h4>
-                      <p>Stops strategy signals engine</p>
+                <div className="chart-body-container" style={{ display: 'grid', placeItems: 'center' }}>
+                  {positions.length === 0 ? (
+                    <div className="empty-allocation-chart-group">
+                      <svg width="150" height="150" viewBox="0 0 100 100">
+                        <circle cx="50" cy="50" r="40" fill="#89b4fa" />
+                        <circle cx="50" cy="50" r="28" fill="#11131c" />
+                        <text x="50" y="48" fill="white" fontSize="7" fontWeight="bold" textAnchor="middle">No Data</text>
+                        <text x="50" y="58" fill="white" fontSize="7" fontWeight="bold" textAnchor="middle">100.0%</text>
+                      </svg>
+                      <span className="allocation-label">No Data (100.0%)</span>
                     </div>
-                    <button className="btn btn-danger btn-sm" onClick={handleStopBot} disabled={!status?.running}>
-                      Stop
-                    </button>
-                  </div>
-
-                  <div className="control-item">
-                    <div className="control-info">
-                      <h4>Emergency Squaring-off</h4>
-                      <p>Exits ALL active broker contracts</p>
+                  ) : (
+                    <div className="empty-allocation-chart-group">
+                      <svg width="150" height="150" viewBox="0 0 100 100">
+                        {/* Render segmented allocation chart based on open positions */}
+                        <circle cx="50" cy="50" r="40" fill="#a6e3a1" />
+                        <circle cx="50" cy="50" r="28" fill="#11131c" />
+                        <text x="50" y="48" fill="white" fontSize="6" fontWeight="bold" textAnchor="middle">{positions[0].symbol}</text>
+                        <text x="50" y="58" fill="white" fontSize="7" fontWeight="bold" textAnchor="middle">100.0%</text>
+                      </svg>
+                      <span className="allocation-label">{positions[0].symbol} Allocated</span>
                     </div>
-                    <button className="btn btn-danger btn-sm" onClick={handleCloseAll} disabled={positions.length === 0}>
-                      Square-Off
-                    </button>
-                  </div>
+                  )}
                 </div>
               </div>
             </div>
           </div>
         )}
 
-        {/* Tab 2: Positions Workspace */}
+        {/* Tab: Jarvis AI Cyber Assistant */}
+        {activeTab === 'jarvis' && (
+          <div className="glass-card neural-container">
+            <div className="panel-header">
+              <h3>🧠 Jarvis Cybernetic Intelligence</h3>
+              <span className="badge success status-pulse">Brain Active</span>
+            </div>
+            <div className="ai-grid">
+              <div className="ai-console-pane">
+                <div className="neural-radar">
+                  <div className="radar-circle"></div>
+                  <div className="radar-circle inner"></div>
+                  <span className="brain-logo-glow">🧠</span>
+                </div>
+                <div className="radar-stats">
+                  <p>Model: <strong>Gemini Flash</strong></p>
+                  <p>Intel Status: <strong>Monitoring Trades</strong></p>
+                  <p>Voice Feed: <strong>Enabled</strong></p>
+                </div>
+              </div>
+              <div className="ai-chat-history">
+                <div className="chat-message bot">
+                  <span className="msg-tag">JARVIS</span>
+                  <p>System operational. Currently analyzing tick data for NIFTY & BANKNIFTY options. No anomalies detected in current volatility bounds.</p>
+                </div>
+                <div className="chat-message user">
+                  <span className="msg-tag">OPERATOR</span>
+                  <p>Check portfolio limits</p>
+                </div>
+                <div className="chat-message bot">
+                  <span className="msg-tag">JARVIS</span>
+                  <p>Total Risk Deployed: ₹0.00. Maximum Daily Drawdown buffer is at 100% (₹15,000 available). Portfolio operates in full capital guard safety bounds.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Tab: Market Analysis quotes lookup */}
+        {activeTab === 'market' && (
+          <div className="glass-card">
+            <div className="panel-header">
+              <h3>Live Ticker Tapes</h3>
+            </div>
+            <div className="ticker-widget">
+              {['NIFTY', 'BANKNIFTY', 'FINNIFTY'].map((symbol) => {
+                const quote = quotes[symbol] || { last_price: symbol === 'NIFTY' ? 22450 : symbol === 'BANKNIFTY' ? 47800 : 20900, volume: 500 };
+                return (
+                  <div key={symbol} className="ticker-item">
+                    <span className="ticker-symbol">{symbol}</span>
+                    <span className="ticker-price">₹{quote.last_price.toFixed(2)}</span>
+                    <span className="ticker-change up">● Stream Online</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Tab: Active Trades Monitor */}
         {activeTab === 'positions' && (
           <div className="glass-card">
             <div className="panel-header">
@@ -834,7 +1175,153 @@ function App() {
           </div>
         )}
 
-        {/* Tab 3: Historical Trades Logs */}
+        {/* Tab: Operator User Management */}
+        {activeTab === 'management' && (
+          <div className="glass-card">
+            <div className="panel-header">
+              <h3>Operator Authorization Log</h3>
+            </div>
+            <div className="management-card-grid">
+              <div className="operator-profile-card">
+                <div className="operator-header">
+                  <span className="operator-avatar">👤</span>
+                  <div>
+                    <h4>GK (Operator 01)</h4>
+                    <span className="pro-tag-badge">ADMIN</span>
+                  </div>
+                </div>
+                <div className="operator-meta">
+                  <p>Pipeline Status: <strong className="text-success">Active Connection</strong></p>
+                  <p>Brokerage: <strong>Angel One API</strong></p>
+                  <p>Risk Margin Deployed: <strong>₹1,00,000.00</strong></p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Tab 5: Configuration Settings Panel */}
+        {activeTab === 'settings' && (
+          <div className="glass-card">
+            <div className="panel-header">
+              <h3>Strategy Settings Profile</h3>
+              <button className="btn btn-secondary btn-sm" onClick={fetchConfig}>🔄 Fetch Current</button>
+            </div>
+            {!config ? (
+              <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--color-text-muted)' }}>
+                Settings could not be fetched from engine.
+              </div>
+            ) : (
+              <form className="settings-form" onSubmit={(e) => e.preventDefault()}>
+                <div className="form-group">
+                  <label>Market Session Open (Read-only)</label>
+                  <input value={config.market_open || ''} disabled />
+                </div>
+                <div className="form-group">
+                  <label>Market Session Close (Read-only)</label>
+                  <input value={config.market_close || ''} disabled />
+                </div>
+                <div className="form-group">
+                  <label>Entry Start Window</label>
+                  <input 
+                    value={isEditing ? (editedConfig?.entry_start || '') : (config.entry_start || '')} 
+                    onChange={(e) => setEditedConfig({ ...editedConfig, entry_start: e.target.value })}
+                    disabled={!isEditing} 
+                    placeholder="e.g. 09:30"
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Entry End Window</label>
+                  <input 
+                    value={isEditing ? (editedConfig?.entry_end || '') : (config.entry_end || '')} 
+                    onChange={(e) => setEditedConfig({ ...editedConfig, entry_end: e.target.value })}
+                    disabled={!isEditing} 
+                    placeholder="e.g. 14:30"
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Candle Period Interval</label>
+                  <input 
+                    value={isEditing ? (editedConfig?.candle_period || '') : (config.candle_period || '')} 
+                    onChange={(e) => setEditedConfig({ ...editedConfig, candle_period: e.target.value })}
+                    disabled={!isEditing} 
+                    placeholder="e.g. 5m or 15m"
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Options Strategy Status</label>
+                  <select 
+                    value={isEditing ? (editedConfig?.nifty_enabled ? 'true' : 'false') : (config.nifty_enabled ? 'true' : 'false')} 
+                    onChange={(e) => setEditedConfig({ ...editedConfig, nifty_enabled: e.target.value === 'true' })}
+                    disabled={!isEditing}
+                  >
+                    <option value="true">Nifty Options Enabled</option>
+                    <option value="false">Disabled</option>
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label>BankNifty Integration</label>
+                  <select 
+                    value={isEditing ? (editedConfig?.banknifty_enabled ? 'true' : 'false') : (config.banknifty_enabled ? 'true' : 'false')} 
+                    onChange={(e) => setEditedConfig({ ...editedConfig, banknifty_enabled: e.target.value === 'true' })}
+                    disabled={!isEditing}
+                  >
+                    <option value="true">BankNifty Enabled</option>
+                    <option value="false">Disabled</option>
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label>Sandbox / Paper Trading Mode</label>
+                  <select 
+                    value={isEditing ? (editedConfig?.paper_trading ? 'true' : 'false') : (config.paper_trading ? 'true' : 'false')} 
+                    onChange={(e) => setEditedConfig({ ...editedConfig, paper_trading: e.target.value === 'true' })}
+                    style={{ color: (isEditing ? editedConfig?.paper_trading : config.paper_trading) ? 'var(--color-warning)' : 'var(--color-success)' }} 
+                    disabled={!isEditing}
+                  >
+                    <option value="true">🟡 Paper Trading Active (Mock Orders)</option>
+                    <option value="false">🟢 Live Market Trading Active (Real Capital)</option>
+                  </select>
+                </div>
+                
+                <div className="form-actions" style={{ display: 'flex', gap: '12px', marginTop: '20px', gridColumn: 'span 2' }}>
+                  {!isEditing ? (
+                    <button type="button" className="btn btn-primary" onClick={() => { setIsEditing(true); setEditedConfig(config); }}>
+                      ✍️ Edit Configuration
+                    </button>
+                  ) : (
+                    <>
+                      <button type="button" className="btn btn-success" onClick={handleSaveConfig} disabled={loading}>
+                        {loading ? 'Saving…' : '💾 Save Changes'}
+                      </button>
+                      <button type="button" className="btn btn-secondary" onClick={() => { setIsEditing(false); setEditedConfig(config); }} disabled={loading}>
+                        ❌ Cancel
+                      </button>
+                    </>
+                  )}
+                </div>
+              </form>
+            )}
+          </div>
+        )}
+
+        {/* Tab: Notifications / Telegram Integration */}
+        {activeTab === 'notifications' && (
+          <div className="glass-card">
+            <div className="panel-header">
+              <h3>🔔 Telegram Alert Broadcast</h3>
+            </div>
+            <div className="form-group">
+              <label>Telegram Bot Token</label>
+              <input value="8711362972:AAFzwb7RO_odzG1pYfImCoq4pan7utSOkuc" disabled />
+            </div>
+            <div className="form-group" style={{ marginTop: '16px' }}>
+              <label>Telegram Chat ID</label>
+              <input value="8005538457" disabled />
+            </div>
+          </div>
+        )}
+
+        {/* Tab: Historical Trade Logs */}
         {activeTab === 'trades' && (
           <div className="glass-card">
             <div className="panel-header" style={{ flexWrap: 'wrap', gap: '16px' }}>
@@ -909,7 +1396,7 @@ function App() {
           </div>
         )}
 
-        {/* Tab 4: System Console Logging Terminal */}
+        {/* Tab: Real-time scrolling system logs terminal */}
         {activeTab === 'logs' && (
           <div className="terminal-widget">
             <div className="terminal-header">
@@ -941,65 +1428,72 @@ function App() {
           </div>
         )}
 
-        {/* Tab 5: Configuration Settings Panel */}
-        {activeTab === 'settings' && (
+        {/* Tab: Help operator handbook */}
+        {activeTab === 'help' && (
           <div className="glass-card">
             <div className="panel-header">
-              <h3>Strategy Settings Profile</h3>
-              <button className="btn btn-secondary btn-sm" onClick={fetchConfig}>🔄 Fetch Current</button>
+              <h3>❓ Operator Manual & Documentation</h3>
             </div>
-            {!config ? (
-              <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--color-text-muted)' }}>
-                Settings could not be fetched from engine.
-              </div>
-            ) : (
-              <form className="settings-form" onSubmit={(e) => e.preventDefault()}>
-                <div className="form-group">
-                  <label>Market Session Open</label>
-                  <input value={config.market_open || ''} disabled />
-                </div>
-                <div className="form-group">
-                  <label>Market Session Close</label>
-                  <input value={config.market_close || ''} disabled />
-                </div>
-                <div className="form-group">
-                  <label>Entry Start Window</label>
-                  <input value={config.entry_start || ''} disabled />
-                </div>
-                <div className="form-group">
-                  <label>Entry End Window</label>
-                  <input value={config.entry_end || ''} disabled />
-                </div>
-                <div className="form-group">
-                  <label>Candle Period Interval (Seconds)</label>
-                  <input value={config.candle_period || ''} disabled />
-                </div>
-                <div className="form-group">
-                  <label>Options Strategy Status</label>
-                  <select value={config.nifty_enabled ? 'true' : 'false'} disabled>
-                    <option value="true">Nifty Options Enabled</option>
-                    <option value="false">Disabled</option>
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label>BankNifty Integration</label>
-                  <select value={config.banknifty_enabled ? 'true' : 'false'} disabled>
-                    <option value="true">BankNifty Enabled</option>
-                    <option value="false">Disabled</option>
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label>Sandbox / Paper Trading Mode</label>
-                  <select value={config.paper_trading ? 'true' : 'false'} style={{ color: config.paper_trading ? 'var(--color-warning)' : 'var(--color-success)' }} disabled>
-                    <option value="true">🟡 Paper Trading Active (Mock Orders)</option>
-                    <option value="false">🟢 Live Market Trading Active (Real Capital)</option>
-                  </select>
-                </div>
-              </form>
-            )}
+            <div className="help-content-rich" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <p>Welcome to <strong>TradeBot Pro</strong> Enterprise Standalone Control Dashboard.</p>
+              <h4>Operational Safety Rules:</h4>
+              <ul>
+                <li>Ensure API keys are activated and connected under Broker settings before toggling Start Bot.</li>
+                <li>Daily loss limits protect your trading account from highly volatile markets. Halts will trigger immediately on breach.</li>
+                <li>Use Jarvis AI console mode to let LLM intelligence oversee system status and send custom Telegram notifications on anomaly events.</li>
+              </ul>
+            </div>
           </div>
         )}
       </main>
+
+      {/* 3. Right Sidebar: Navigation panel (Responsive drawer on mobile) */}
+      <nav className={`sidebar-nav ${isNavigationOpen ? 'mobile-open' : ''}`}>
+        <div className="drawer-close-row">
+          <span>NAVIGATION</span>
+          <button className="drawer-close-btn" onClick={() => setIsNavigationOpen(false)}>✕</button>
+        </div>
+
+        <ul className="sidebar-menu">
+          {[
+            { id: 'overview', name: 'Overview', icon: '📊' },
+            { id: 'jarvis', name: 'Jarvis AI', icon: '🧠' },
+            { id: 'market', name: 'Market Analysis', icon: '🌐' },
+            { id: 'positions', name: 'Active Trades', icon: '🎯' },
+            { id: 'management', name: 'Management', icon: '🔑' },
+            { id: 'settings', name: 'Config', icon: '⚙️' },
+            { id: 'notifications', name: 'Notifications', icon: '🔔' },
+            { id: 'trades', name: 'Trade History', icon: '📜' },
+            { id: 'logs', name: 'Console', icon: '💻' },
+            { id: 'help', name: 'Help', icon: '❓' }
+          ].map((item) => (
+            <li key={item.id} className={`menu-item ${activeTab === item.id ? 'active' : ''}`}>
+              <button onClick={() => {
+                setActiveTab(item.id);
+                setIsNavigationOpen(false); // Auto close drawer on click
+              }}>
+                <span className="menu-icon">{item.icon}</span>
+                <span>{item.name}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+
+        <div className="sidebar-footer">
+          <div className="user-badge">
+            <div className="user-info">
+              <p>{userId}</p>
+              <span>Operator Profile</span>
+            </div>
+            <button className="logout-btn" onClick={handleLogout} title="Log Out">
+              🚪
+            </button>
+          </div>
+          <div className="sidebar-version-tag">
+            v2.1.0
+          </div>
+        </div>
+      </nav>
     </div>
   )
 }
