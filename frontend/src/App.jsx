@@ -1111,12 +1111,15 @@ function App() {
 
         {/* Start / Stop / Emergency */}
         <div className="control-actions-group">
-          <button className="btn-bot-start" onClick={handleStartBot} disabled={isBotRunning}>
-            ▶ START BOT
-          </button>
-          <button className="btn-bot-pause" onClick={handleStopBot} disabled={!isBotRunning}>
-            ⏸ PAUSE
-          </button>
+          {isBotRunning ? (
+            <button className="btn-bot-pause" onClick={handleStopBot} style={{ background: 'linear-gradient(135deg, #f38ba8 0%, #eba0b2 100%)', boxShadow: '0 4px 15px rgba(243, 139, 168, 0.2)' }}>
+              ■ STOP BOT
+            </button>
+          ) : (
+            <button className="btn-bot-start" onClick={handleStartBot}>
+              ▶ START BOT
+            </button>
+          )}
         </div>
         {positions.length > 0 && (
           <button onClick={handleCloseAll} style={{ width: '100%', marginTop: '6px', padding: '8px', background: 'rgba(243,139,168,0.12)', border: '1px solid rgba(243,139,168,0.3)', borderRadius: '8px', color: '#f38ba8', fontWeight: '700', cursor: 'pointer', fontSize: '0.8rem', transition: 'all 0.2s' }}>
