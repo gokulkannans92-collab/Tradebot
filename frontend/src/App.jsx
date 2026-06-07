@@ -139,6 +139,7 @@ function App() {
   const [editedOperatorBroker, setEditedOperatorBroker] = useState('MOCK')
   const [editedOperatorActive, setEditedOperatorActive] = useState(true)
   const [editedOperatorPassword, setEditedOperatorPassword] = useState('')
+  const [editedOperatorDesignation, setEditedOperatorDesignation] = useState('Operator')
   const [showEditPassword, setShowEditPassword] = useState(false)
   // Full risk rules editing
   const [editedRisk, setEditedRisk] = useState({
@@ -557,6 +558,7 @@ function App() {
     try {
       const settingsPayload = {
         name: editedOperatorName,
+        designation: editedOperatorDesignation,
         broker_type: editedOperatorBroker,
         active: editedOperatorActive,
         risk_rules: { ...editedRisk }
@@ -1740,13 +1742,13 @@ function App() {
                     <tr>
                       <td style={{ fontWeight: 'bold', color: 'white' }}>{config?.name || userId}</td>
                       <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem' }}>{config?.user_id || userId}</td>
-                      <td><span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', fontWeight: '600' }}>Operator</span></td>
+                      <td><span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', fontWeight: '600' }}>{config?.designation || 'Operator'}</span></td>
                       <td><span className="badge" style={{ background: 'rgba(137,180,250,0.15)', color: '#89b4fa', border: '1px solid rgba(137,180,250,0.3)' }}>{config?.broker_type || 'MOCK'}</span></td>
                       <td><span className={`badge ${config?.active ? 'success' : 'danger'}`}>{config?.active ? '☑ Active' : '☒ Inactive'}</span></td>
                       <td style={{ fontWeight: '600' }}>₹{(config?.risk_rules?.max_daily_loss || 15000).toLocaleString('en-IN')}</td>
                       <td style={{ color: 'var(--color-text-muted)', fontSize: '0.8rem' }}>Session Active</td>
                       <td style={{ textAlign: 'center' }}>
-                        <button onClick={() => { setEditedOperatorName(config?.name || userId); setEditedOperatorBroker(config?.broker_type || 'MOCK'); setEditedOperatorActive(config?.active ?? true); setEditedRisk({ ...config?.risk_rules }); setIsEditingOperator(true) }}
+                        <button onClick={() => { setEditedOperatorName(config?.name || userId); setEditedOperatorDesignation(config?.designation || 'Operator'); setEditedOperatorBroker(config?.broker_type || 'MOCK'); setEditedOperatorActive(config?.active ?? true); setEditedRisk({ ...config?.risk_rules }); setIsEditingOperator(true) }}
                           style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-glass)', borderRadius: '8px', padding: '6px 12px', cursor: 'pointer', color: 'white', fontSize: '0.8rem' }}
                           title="Edit profile">✏️ Edit</button>
                       </td>
@@ -1834,11 +1836,12 @@ function App() {
                     </div>
                     <div className="form-group">
                       <label>Designation</label>
-                      <select style={{ width: '100%', height: '42px', borderRadius: '10px', background: '#11131c', border: '1px solid var(--border-glass)', color: 'white', padding: '0 12px', fontSize: '0.9rem', cursor: 'pointer' }}>
-                        <option>Operator</option>
-                        <option>Senior Operator</option>
-                        <option>Risk Manager</option>
-                        <option>Admin</option>
+                      <select value={editedOperatorDesignation} onChange={e => setEditedOperatorDesignation(e.target.value)}
+                        style={{ width: '100%', height: '42px', borderRadius: '10px', background: '#11131c', border: '1px solid var(--border-glass)', color: 'white', padding: '0 12px', fontSize: '0.9rem', cursor: 'pointer' }}>
+                        <option value="Operator">Operator</option>
+                        <option value="Senior Operator">Senior Operator</option>
+                        <option value="Risk Manager">Risk Manager</option>
+                        <option value="Admin">Admin</option>
                       </select>
                     </div>
                     <div className="form-group">
