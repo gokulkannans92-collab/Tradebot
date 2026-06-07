@@ -163,6 +163,24 @@ function App() {
   const [isEditingNotif, setIsEditingNotif] = useState(false)
   const [testingTelegram, setTestingTelegram] = useState(false)
   const [testingGemini, setTestingGemini] = useState(false)
+  const [chatMessages, setChatMessages] = useState([])
+  const [chatInput, setChatInput] = useState('')
+  const [isJarvisThinking, setIsJarvisThinking] = useState(false)
+
+  // Market Scan states
+  const [scanResults, setScanResults] = useState([])
+  const [geminiInsights, setGeminiInsights] = useState('')
+  const [scanConsoleLines, setScanConsoleLines] = useState([])
+  const [isScanning, setIsScanning] = useState(false)
+  const [scanTime, setScanTime] = useState('NEVER')
+  const [scanCooldownLeft, setScanCooldownLeft] = useState(0)
+
+  // Workstation Lock states
+  const [isWorkstationLocked, setIsWorkstationLocked] = useState(sessionStorage.getItem('tradebot_locked') === 'true')
+  const [unlockPassword, setUnlockPassword] = useState('')
+  const [showUnlockPassword, setShowUnlockPassword] = useState(false)
+  const [unlocking, setUnlocking] = useState(false)
+  const [unlockError, setUnlockError] = useState('')
 
   // ── Sidebar: AI Market Selection ──────────────────────────────────────────
   const [aiMarketSelection, setAiMarketSelection] = useState(false)
@@ -198,6 +216,29 @@ function App() {
       return () => { clearInterval(interval); disconnectWebSockets() }
     }
   }, [token])
+
+  useEffect(() => {
+    if (token) {
+      if (activeTab === 'jarvis') {
+        fetchJarvisHistory()
+      } else if (activeTab === 'market') {
+        fetchLastMarketScan()
+      }
+    }
+  }, [token, activeTab])
+
+  useEffect(() => {
+    if (scanCooldownLeft > 0) {
+      const timer = setTimeout(() => {
+        setScanCooldownLeft(prev => prev - 1)
+      }, 1000)
+      return () => clearTimeout(timer)
+    }
+  }, [scanCooldownLeft])
+
+  useEffect(() => {
+    sessionStorage.setItem('tradebot_locked', isWorkstationLocked ? 'true' : 'false')
+  }, [isWorkstationLocked])
 
   useEffect(() => {
     if (autoScroll && activeTab === 'logs' && terminalEndRef.current) {
@@ -292,6 +333,9 @@ function App() {
         setEditedConfig(data)
         // Pre-populate risk from config
         if (data.risk_rules) setEditedRisk({ ...data.risk_rules })
+        if (data.telegram_token) setTelegramToken(data.telegram_token)
+        if (data.telegram_chat_id) setTelegramChatId(data.telegram_chat_id)
+        if (data.gemini_key) setGeminiKey(data.gemini_key)
         // Sync client-side username with the canonical user ID (e.g. "admin") resolved from users.json
         if (data.user_id && data.user_id !== userId) {
           setUserId(data.user_id)
@@ -310,6 +354,177 @@ function App() {
     const data = await res.json().catch(() => ({}))
     if (!res.ok) throw new Error(data.detail || 'Request failed')
     return data
+  }
+
+  async function fetchLastMarketScan() {
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/market/last-scan`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      if (res.ok) {
+        const data = await res.json()
+        setScanResults(data.results || [])
+        setGeminiInsights(data.gemini_insights || '')
+        setScanConsoleLines(data.console_lines || [])
+        setScanTime(data.scan_time || 'NEVER')
+      }
+    } catch (e) { console.error('Failed to fetch last market scan:', e) }
+  }
+
+  async function handleInitiateScan() {
+    if (isScanning || scanCooldownLeft > 0) return
+    setIsScanning(true)
+    setScanConsoleLines([
+      { message: "Initiating deep market scan...", tag: "system", timestamp: new Date().toLocaleTimeString() },
+      { message: "Querying Gemini & Global News sources...", tag: "system", timestamp: new Date().toLocaleTimeString() }
+    ])
+    
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/market/scan`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      
+      if (res.ok) {
+        const data = await res.json()
+        setScanResults(data.results || [])
+        setGeminiInsights(data.gemini_insights || '')
+        setScanConsoleLines(data.console_lines || [])
+        setScanTime(data.scan_time || 'NEVER')
+        showToast('Deep market scan complete!', 'success')
+        setScanCooldownLeft(30)
+      } else {
+        const err = await res.json().catch(() => ({}))
+        showToast(err.detail || 'Failed to scan markets', 'error')
+        setScanConsoleLines(prev => [...prev, { message: `!!! ERROR: ${err.detail || 'SCAN FAILED'}`, tag: 'error', timestamp: new Date().toLocaleTimeString() }])
+      }
+    } catch (err) {
+      showToast('Connection failed: ' + err.message, 'error')
+      setScanConsoleLines(prev => [...prev, { message: `!!! ERROR: ${err.message}`, tag: 'error', timestamp: new Date().toLocaleTimeString() }])
+    } finally {
+      setIsScanning(false)
+    }
+  }
+
+  async function handleUnlockWorkstation(e) {
+    if (e) e.preventDefault()
+    if (!unlockPassword || unlocking) return
+    setUnlocking(true)
+    setUnlockError('')
+    
+    try {
+      const response = await fetch(`${API_BASE}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: userId, password: unlockPassword })
+      })
+      
+      if (response.ok) {
+        setIsWorkstationLocked(false)
+        setUnlockPassword('')
+        showToast('Workstation unlocked successfully!', 'success')
+      } else {
+        const err = await response.json().catch(() => ({}))
+        setUnlockError(err.detail || 'Invalid password. Access denied.')
+      }
+    } catch (err) {
+      setUnlockError('Connection failed: ' + err.message)
+    } finally {
+      setUnlocking(false)
+    }
+  }
+
+  async function fetchJarvisHistory() {
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/jarvis/history`, { headers: { Authorization: `Bearer ${token}` } })
+      if (res.ok) {
+        const data = await res.json()
+        setChatMessages(data.history || [])
+      }
+    } catch (e) { console.error('Failed to fetch chat history:', e) }
+  }
+
+  async function handleSendJarvisMessage(e) {
+    if (e) e.preventDefault()
+    if (!chatInput.trim() || isJarvisThinking) return
+    const userMsg = chatInput.trim()
+    setChatInput('')
+    
+    // Optimistic local update
+    const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    setChatMessages(prev => [...prev, { role: 'user', content: userMsg, timestamp }])
+    setIsJarvisThinking(true)
+    
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/jarvis/chat`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ prompt: userMsg })
+      })
+      if (res.ok) {
+        fetchJarvisHistory()
+      } else {
+        const err = await res.json().catch(() => ({}))
+        showToast(err.detail || 'Failed to send message', 'error')
+      }
+    } catch (err) {
+      showToast('Connection failed: ' + err.message, 'error')
+    } finally {
+      setIsJarvisThinking(false)
+    }
+  }
+
+  async function handleSendQuickMessage(promptText) {
+    if (isJarvisThinking) return
+    const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    setChatMessages(prev => [...prev, { role: 'user', content: promptText, timestamp }])
+    setIsJarvisThinking(true)
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/jarvis/chat`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ prompt: promptText })
+      })
+      if (res.ok) {
+        fetchJarvisHistory()
+      } else {
+        const err = await res.json().catch(() => ({}))
+        showToast(err.detail || 'Failed to send prompt', 'error')
+      }
+    } catch (err) {
+      showToast('Connection failed: ' + err.message, 'error')
+    } finally {
+      setIsJarvisThinking(false)
+    }
+  }
+
+  async function handleGenerateReport() {
+    if (isJarvisThinking) return
+    setIsJarvisThinking(true)
+    showToast('Generating AI trading report...', 'info')
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/jarvis/report`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      if (res.ok) {
+        fetchJarvisHistory()
+        showToast('Daily report generated!', 'success')
+      } else {
+        const err = await res.json().catch(() => ({}))
+        showToast(err.detail || 'Failed to generate report', 'error')
+      }
+    } catch (err) {
+      showToast('Connection failed: ' + err.message, 'error')
+    } finally {
+      setIsJarvisThinking(false)
+    }
   }
 
   // ── Config save ──────────────────────────────────────────────────────────
@@ -369,6 +584,7 @@ function App() {
           entry_start: updated.entry_start, entry_end: updated.entry_end,
           candle_period: updated.candle_period, paper_trading: updated.paper_trading,
           nifty_enabled: updated.nifty_enabled, banknifty_enabled: updated.banknifty_enabled,
+          finnifty_enabled: updated.finnifty_enabled,
           [key]: value
         }
       })
@@ -377,6 +593,44 @@ function App() {
   }
 
   // ── Bot control ──────────────────────────────────────────────────────────
+  async function handleStartBot() {
+    if (!config) return
+    
+    // Choose target instrument based on enabled switches
+    let instrument = 'NIFTY'
+    if (config.banknifty_enabled) {
+      instrument = 'BANKNIFTY'
+    } else if (config.finnifty_enabled) {
+      instrument = 'FINNIFTY'
+    } else if (config.nifty_enabled) {
+      instrument = 'NIFTY'
+    }
+    
+    // Choose lots based on selected instrument
+    let lots = 1
+    if (instrument === 'BANKNIFTY') {
+      lots = config.banknifty_lots || 1
+    } else if (instrument === 'FINNIFTY') {
+      lots = config.finnifty_lots || 1
+    } else {
+      lots = config.nifty_lots || 1
+    }
+    
+    showToast('Engine startup initiated...', 'info')
+    try {
+      const data = await apiPost('/api/v1/start', {
+        category: 'Options',
+        instrument: instrument,
+        lots: Number(lots),
+        brain: !!aiMarketSelection
+      })
+      showToast(data.message || 'Bot started successfully!', 'success')
+      fetchStatus()
+    } catch (err) {
+      showToast('Start failed: ' + err.message, 'error')
+    }
+  }
+
   async function handleStopBot() {
     if (!window.confirm('Send stop signal to the engine?')) return
     try {
@@ -664,6 +918,104 @@ function App() {
     )
   }
 
+  // Workstation Lock Screen Overlay
+  if (token && isWorkstationLocked) {
+    return (
+      <div className="login-overlay" style={{ background: 'rgba(10,10,15,0.98)', backdropFilter: 'blur(20px)', zIndex: 99999 }}>
+        <div className="login-card" style={{ maxWidth: '420px', width: '100%', textAlign: 'center' }}>
+          <div className="login-brand" style={{ marginBottom: '24px' }}>
+            <div className="login-brand-icon" style={{ fontSize: '3rem', textShadow: '0 0 15px rgba(137,180,250,0.5)', animation: isBotRunning ? 'pulse 2s infinite' : 'none' }}>🔒</div>
+            <h2 style={{ fontSize: '1.5rem', marginTop: '10px', fontFamily: 'Orbitron, sans-serif', letterSpacing: '1px' }}>WORKSTATION LOCKED</h2>
+            <p style={{ fontSize: '0.82rem', color: 'var(--color-text-muted)', marginTop: '4px' }}>Secure session active for operator</p>
+          </div>
+
+          <div style={{
+            background: 'rgba(255,255,255,0.02)',
+            border: '1px solid rgba(255,255,255,0.05)',
+            borderRadius: '12px',
+            padding: '16px',
+            marginBottom: '20px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '8px',
+            alignItems: 'center'
+          }}>
+            <div style={{ fontWeight: 'bold', fontSize: '0.95rem', color: 'white' }}>👤 {config?.name || userId}</div>
+            <div style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', textTransform: 'uppercase', fontFamily: 'var(--font-mono)' }}>{config?.broker_type || 'MOCK'} · OPERATOR</div>
+            
+            <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+              {isBotRunning ? (
+                <span className="badge success status-pulse" style={{ fontSize: '0.7rem', fontWeight: 'bold' }}>🟢 Autopilot Active</span>
+              ) : (
+                <span className="badge warning" style={{ fontSize: '0.7rem', fontWeight: 'bold' }}>🟡 Bot Idle</span>
+              )}
+              {positions.length > 0 && (
+                <span className="badge info" style={{ fontSize: '0.7rem', fontWeight: 'bold', background: 'rgba(137,180,250,0.15)', color: '#89b4fa', border: '1px solid rgba(137,180,250,0.3)' }}>
+                  🎯 {positions.length} Active Position{positions.length > 1 ? 's' : ''}
+                </span>
+              )}
+            </div>
+          </div>
+
+          {unlockError && <div className="alert-error" style={{ marginBottom: '16px', fontSize: '0.85rem' }}>⚠️ {unlockError}</div>}
+
+          <form onSubmit={handleUnlockWorkstation} className="login-form" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div className="form-group" style={{ textAlign: 'left' }}>
+              <label style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>Security Password</label>
+              <div style={{ position: 'relative' }}>
+                <input
+                  type={showUnlockPassword ? 'text' : 'password'}
+                  value={unlockPassword}
+                  onChange={e => setUnlockPassword(e.target.value)}
+                  placeholder="••••••••"
+                  autoComplete="current-password"
+                  required
+                  style={{ width: '100%', paddingRight: '44px', height: '42px', borderRadius: '10px' }}
+                  disabled={unlocking}
+                />
+                <button
+                  type="button"
+                  onMouseDown={() => setShowUnlockPassword(true)}
+                  onMouseUp={() => setShowUnlockPassword(false)}
+                  onMouseLeave={() => setShowUnlockPassword(false)}
+                  style={{
+                    position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)',
+                    background: 'none', border: 'none',
+                    color: showUnlockPassword ? 'var(--color-primary)' : 'rgba(255,255,255,0.35)',
+                    cursor: 'pointer', padding: '0', display: 'flex', outline: 'none'
+                  }}
+                  title="Hold to reveal"
+                >
+                  <EyeIcon open={showUnlockPassword} />
+                </button>
+              </div>
+            </div>
+
+            <button type="submit" className="btn btn-primary" style={{ height: '42px', borderRadius: '10px', marginTop: '6px' }} disabled={unlocking}>
+              {unlocking ? 'Verifying Credentials...' : 'Unlock Console'}
+            </button>
+          </form>
+
+          <button
+            onClick={handleLogout}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: 'var(--color-text-muted)',
+              fontSize: '0.78rem',
+              cursor: 'pointer',
+              marginTop: '16px',
+              textDecoration: 'underline',
+              outline: 'none'
+            }}
+          >
+            Switch Account / Log Out
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   // ════════════════════════════════════════════════════════════════════════════
   // MAIN DASHBOARD
   // ════════════════════════════════════════════════════════════════════════════
@@ -698,7 +1050,8 @@ function App() {
           <div className="quick-actions">
             <button className="quick-action-btn" onClick={() => setActiveTab('help')} title="Help">❓</button>
             <button className="quick-action-btn" onClick={() => setActiveTab('settings')} title="Config">⚙️</button>
-            <button className="quick-action-btn" onClick={handleLogout} title="Logout">🔒</button>
+            <button className="quick-action-btn" onClick={() => setIsWorkstationLocked(true)} title="Lock Workstation">🔒</button>
+            <button className="quick-action-btn" onClick={handleLogout} title="Logout">🚪</button>
           </div>
           <div className="operator-header-badge">
             <span className="badge-avatar">👤</span>
@@ -758,7 +1111,7 @@ function App() {
 
         {/* Start / Stop / Emergency */}
         <div className="control-actions-group">
-          <button className="btn-bot-start" onClick={() => { showToast('Engine startup initiated!', 'success'); setStatus(s => ({ ...s, running: true })) }} disabled={isBotRunning}>
+          <button className="btn-bot-start" onClick={handleStartBot} disabled={isBotRunning}>
             ▶ START BOT
           </button>
           <button className="btn-bot-pause" onClick={handleStopBot} disabled={!isBotRunning}>
@@ -1036,38 +1389,84 @@ function App() {
 
         {/* ════ TAB: JARVIS AI ═══════════════════════════════════════════════ */}
         {activeTab === 'jarvis' && (
-          <div className="glass-card neural-container">
-            <div className="panel-header">
+          <div className="glass-card neural-container" style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 150px)', overflow: 'hidden' }}>
+            <div className="panel-header" style={{ flexShrink: 0, paddingBottom: '12px' }}>
               <h3>🧠 Jarvis Cybernetic Intelligence</h3>
-              <span className="badge success status-pulse">Brain Active</span>
+              <span className={`badge ${isJarvisThinking ? 'warning' : 'success'} ${isJarvisThinking ? '' : 'status-pulse'}`}>
+                {isJarvisThinking ? 'Thinking...' : 'Brain Active'}
+              </span>
             </div>
-            <div className="ai-grid">
-              <div className="ai-console-pane">
-                <div className="neural-radar">
+            <div className="ai-grid" style={{ display: 'flex', flex: 1, gap: '16px', overflow: 'hidden', minHeight: 0 }}>
+              {/* Radar info panel */}
+              <div className="ai-console-pane" style={{ width: '220px', flexShrink: 0, display: 'flex', flexDirection: 'column', height: '100%', overflowY: 'auto' }}>
+                <div className="neural-radar" style={{ margin: '0 auto' }}>
                   <div className="radar-circle"></div>
                   <div className="radar-circle inner"></div>
-                  <span className="brain-logo-glow">🧠</span>
+                  <span className="brain-logo-glow" style={{ animation: isJarvisThinking ? 'slideUp 1s ease infinite' : '' }}>🧠</span>
                 </div>
-                <div className="radar-stats">
-                  <p>Model: <strong>{config?.ai_model || 'Gemini Flash'}</strong></p>
-                  <p>Intel Status: <strong>Monitoring Trades</strong></p>
-                  <p>Voice Feed: <strong>Enabled</strong></p>
-                  <p>AI Selection: <strong>{aiMarketSelection ? 'Active' : 'Manual'}</strong></p>
+                <div className="radar-stats" style={{ marginTop: '16px', fontSize: '0.82rem' }}>
+                  <p style={{ margin: '4px 0' }}>Model: <strong>{config?.ai_model || 'Gemini Flash'}</strong></p>
+                  <p style={{ margin: '4px 0' }}>Intel Status: <strong>{isJarvisThinking ? 'Analyzing...' : 'Monitoring'}</strong></p>
+                  <p style={{ margin: '4px 0' }}>Voice Feed: <strong style={{ color: '#f38ba8' }}>Offline</strong></p>
+                  <p style={{ margin: '4px 0' }}>AI Selection: <strong>{aiMarketSelection ? 'Active' : 'Manual'}</strong></p>
+                </div>
+                {/* Quick actions panel */}
+                <div style={{ marginTop: '20px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <button className="btn btn-secondary btn-sm" style={{ width: '100%', justifyContent: 'flex-start', fontSize: '0.75rem', height: '32px' }} onClick={handleGenerateReport} disabled={isJarvisThinking}>
+                    📊 Daily P&L Report
+                  </button>
+                  <button className="btn btn-secondary btn-sm" style={{ width: '100%', justifyContent: 'flex-start', fontSize: '0.75rem', height: '32px' }} onClick={() => handleSendQuickMessage("Scan NIFTY and BANKNIFTY right now. What is the current trend, VIX reading, and your recommendation for today?")} disabled={isJarvisThinking}>
+                    📈 Market Scan
+                  </button>
+                  <button className="btn btn-secondary btn-sm" style={{ width: '100%', justifyContent: 'flex-start', fontSize: '0.75rem', height: '32px' }} onClick={() => handleSendQuickMessage("Review my current risk exposure. Check my daily loss limits, position sizing, and whether I should continue trading today.")} disabled={isJarvisThinking}>
+                    ⚠️ Risk Check
+                  </button>
+                  <button className="btn btn-secondary btn-sm" style={{ width: '100%', justifyContent: 'flex-start', fontSize: '0.75rem', height: '32px' }} onClick={() => handleSendQuickMessage("Give me one high-conviction trading tip for today based on my rules and recent lesson history.")} disabled={isJarvisThinking}>
+                    💡 Strategy Tip
+                  </button>
                 </div>
               </div>
-              <div className="ai-chat-history">
-                <div className="chat-message bot">
-                  <span className="msg-tag">JARVIS</span>
-                  <p>System operational. Analyzing tick data for {config?.nifty_enabled ? 'NIFTY' : ''}{config?.banknifty_enabled ? ' & BANKNIFTY' : ''} options. Daily loss guard at ₹{(config?.risk_rules?.max_daily_loss || 0).toLocaleString('en-IN')}.</p>
+              
+              {/* Chat history list */}
+              <div style={{ display: 'flex', flexDirection: 'column', flex: 1, height: '100%', background: 'rgba(255,255,255,0.01)', border: '1px solid var(--border-glass)', borderRadius: '12px', overflow: 'hidden' }}>
+                <div className="ai-chat-history" style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {chatMessages.length === 0 ? (
+                    <div style={{ margin: 'auto', textAlign: 'center', color: 'var(--color-text-muted)' }}>
+                      <p style={{ fontSize: '2.5rem', marginBottom: '8px' }}>💬</p>
+                      <p style={{ fontSize: '0.85rem' }}>Start a conversation with Jarvis core intelligence.</p>
+                    </div>
+                  ) : (
+                    chatMessages.map((msg, index) => (
+                      <div key={index} className={`chat-message ${msg.role === 'user' ? 'user' : 'bot'}`} style={{ alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start', maxWidth: '85%', padding: '10px 14px', borderRadius: '12px', background: msg.role === 'user' ? 'var(--color-primary)' : 'rgba(255,255,255,0.05)', color: msg.role === 'user' ? '#0d0f18' : 'white' }}>
+                        <span className="msg-tag" style={{ fontSize: '0.68rem', fontWeight: 'bold', display: 'block', color: msg.role === 'user' ? '#0d0f18' : 'var(--color-primary)', marginBottom: '4px' }}>{msg.role === 'user' ? 'OPERATOR' : 'JARVIS'}</span>
+                        <p style={{ whiteSpace: 'pre-wrap', margin: 0, fontSize: '0.85rem', lineHeight: '1.4' }}>{msg.content}</p>
+                        <span style={{ fontSize: '0.6rem', color: msg.role === 'user' ? 'rgba(0,0,0,0.5)' : 'var(--color-text-muted)', display: 'block', textAlign: 'right', marginTop: '4px' }}>
+                          {msg.timestamp || ''}
+                        </span>
+                      </div>
+                    ))
+                  )}
+                  {isJarvisThinking && (
+                    <div className="chat-message bot" style={{ alignSelf: 'flex-start', padding: '10px 14px', borderRadius: '12px', background: 'rgba(255,255,255,0.05)', color: 'white' }}>
+                      <span className="msg-tag" style={{ fontSize: '0.68rem', fontWeight: 'bold', display: 'block', color: 'var(--color-primary)', marginBottom: '4px' }}>JARVIS</span>
+                      <p style={{ margin: 0, fontSize: '0.85rem' }}>Thinking... ⚡</p>
+                    </div>
+                  )}
                 </div>
-                <div className="chat-message user">
-                  <span className="msg-tag">OPERATOR</span>
-                  <p>Check portfolio limits</p>
-                </div>
-                <div className="chat-message bot">
-                  <span className="msg-tag">JARVIS</span>
-                  <p>Total Risk Deployed: ₹{activePnL < 0 ? Math.abs(activePnL).toFixed(0) : '0.00'}. Maximum Daily Drawdown buffer remaining: ₹{((config?.risk_rules?.max_daily_loss || 15000) + (activePnL < 0 ? activePnL : 0)).toFixed(0)}. System within safety bounds.</p>
-                </div>
+                
+                {/* Chat input box */}
+                <form onSubmit={handleSendJarvisMessage} style={{ display: 'flex', gap: '8px', padding: '10px', borderTop: '1px solid var(--border-glass)', background: 'rgba(255,255,255,0.02)', flexShrink: 0 }}>
+                  <input
+                    value={chatInput}
+                    onChange={e => setChatInput(e.target.value)}
+                    placeholder="Ask Jarvis about market context, strategy recommendations, etc..."
+                    style={{ flex: 1, height: '36px', background: 'rgba(0,0,0,0.2)', border: '1px solid var(--border-glass)', color: 'white', padding: '0 12px', borderRadius: '8px', outline: 'none', fontSize: '0.85rem' }}
+                    disabled={isJarvisThinking}
+                  />
+                  <button type="submit" className="btn btn-primary" style={{ height: '36px', padding: '0 14px', fontSize: '0.8rem' }} disabled={isJarvisThinking || !chatInput.trim()}>
+                    Send ➤
+                  </button>
+                </form>
               </div>
             </div>
           </div>
@@ -1075,33 +1474,163 @@ function App() {
 
         {/* ════ TAB: MARKET ══════════════════════════════════════════════════ */}
         {activeTab === 'market' && (
-          <div className="glass-card">
-            <div className="panel-header">
-              <h3>Live Ticker Tapes</h3>
-              <span className="badge success" style={{ fontSize: '0.72rem' }}>● Real-time Feed</span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            {/* Top HUD */}
+            <div className="glass-card" style={{ padding: '16px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                <h3 style={{ margin: 0, fontFamily: 'Orbitron, var(--font-sans)', color: '#00d2ff', fontSize: '1.25rem', letterSpacing: '1px' }}>CORE INTELLIGENCE SYSTEM</h3>
+                <span className={`badge ${isScanning ? 'warning' : 'success'} ${isScanning ? '' : 'status-pulse'}`} style={{ fontSize: '0.75rem' }}>
+                  {isScanning ? '🛰️ ANALYZING DATA' : 'SYSTEM READY'}
+                </span>
+              </div>
+              <button
+                className="btn btn-primary"
+                style={{
+                  height: '38px',
+                  minWidth: '150px',
+                  background: 'transparent',
+                  border: '2px solid #00d2ff',
+                  color: '#00d2ff',
+                  fontWeight: 'bold',
+                  boxShadow: '0 0 10px rgba(0,210,255,0.2)',
+                  cursor: isScanning || scanCooldownLeft > 0 ? 'not-allowed' : 'pointer',
+                  opacity: isScanning || scanCooldownLeft > 0 ? 0.6 : 1
+                }}
+                onClick={handleInitiateScan}
+                disabled={isScanning || scanCooldownLeft > 0}
+              >
+                {isScanning ? '🛰️ SCANNING...' : scanCooldownLeft > 0 ? `⏳ COOLDOWN ${scanCooldownLeft}s` : '⚡ INITIATE SCAN'}
+              </button>
             </div>
-            <div className="ticker-widget">
-              {['NIFTY', 'BANKNIFTY', 'FINNIFTY'].map(symbol => {
-                const q = quotes[symbol] || {}
-                const ltp = q.last_price || (symbol === 'NIFTY' ? 22450 : symbol === 'BANKNIFTY' ? 47800 : 20900)
-                const change = q.change || 0
-                const pct = q.change_percent || 0
-                return (
-                  <div key={symbol} className="ticker-item" style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <span className="ticker-symbol">{symbol}</span>
-                    <span className="ticker-price">₹{ltp.toFixed(2)}</span>
-                    <span className={`ticker-change ${change >= 0 ? 'up' : 'down'}`} style={{ color: change >= 0 ? '#a6e3a1' : '#f38ba8', fontSize: '0.75rem' }}>
-                      {change >= 0 ? '▲' : '▼'} {Math.abs(change).toFixed(2)} ({Math.abs(pct).toFixed(2)}%)
-                    </span>
-                    <span style={{ fontSize: '0.68rem', color: 'var(--color-text-muted)' }}>Vol: {q.volume ? (q.volume / 1000).toFixed(0) + 'K' : '—'}</span>
+
+            {/* Split HUD panels */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '20px' }}>
+              {/* Left Panel: Pulse + Tactical */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                {/* Market Pulse Card */}
+                <div className="glass-card" style={{ padding: '20px' }}>
+                  <h4 style={{ margin: '0 0 15px 0', color: '#00d2ff', fontSize: '0.85rem', fontWeight: 'bold', letterSpacing: '1px', textTransform: 'uppercase' }}>MARKET PULSE</h4>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '280px', overflowY: 'auto', paddingRight: '4px' }}>
+                    {scanResults && scanResults.length > 0 ? (
+                      [...scanResults].sort((a,b) => (b.score || 50) - (a.score || 50)).map((r, i) => {
+                        const score = r.score ?? 50
+                        const color = score > 60 ? '#a6e3a1' : score < 40 ? '#f38ba8' : '#00d2ff'
+                        return (
+                          <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', fontWeight: 'bold' }}>
+                              <span>{r.selected_market}</span>
+                              <span style={{ color }}>{score}%</span>
+                            </div>
+                            <div style={{ height: '6px', width: '100%', background: 'rgba(255,255,255,0.05)', borderRadius: '3px', overflow: 'hidden' }}>
+                              <div style={{ height: '100%', width: `${score}%`, background: color, borderRadius: '3px', transition: 'width 0.5s ease-in-out' }}></div>
+                            </div>
+                          </div>
+                        )
+                      })
+                    ) : (
+                      <div style={{ textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '0.8rem', padding: '20px 0' }}>No scan results. Click Initiate Scan.</div>
+                    )}
                   </div>
-                )
-              })}
+                </div>
+
+                {/* Tactical Overview Card */}
+                <div className="glass-card" style={{ padding: '20px', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
+                  <h4 style={{ margin: '0 0 15px 0', color: '#00d2ff', fontSize: '0.85rem', fontWeight: 'bold', letterSpacing: '1px', textTransform: 'uppercase', alignSelf: 'flex-start' }}>TACTICAL OVERVIEW</h4>
+                  <div style={{ fontSize: '1.75rem', fontWeight: 'bold', letterSpacing: '1px', margin: '15px 0 5px 0', color: scanResults && scanResults.length > 0 ? '#a6e3a1' : '#ffffff' }}>
+                    {scanResults && scanResults.length > 0 ? (
+                      (() => {
+                        const primary = scanResults[0]
+                        let best = primary.selected_market
+                        if (geminiInsights.toUpperCase().includes('GOLD') || geminiInsights.toUpperCase().includes('XAU/USD')) {
+                          best = 'GOLD'
+                        } else if (geminiInsights.toUpperCase().includes('SILVER')) {
+                          best = 'SILVER'
+                        }
+                        return best
+                      })()
+                    ) : 'PENDING'}
+                  </div>
+                  <div style={{ fontSize: '0.85rem', color: '#00d2ff', marginBottom: '15px', fontWeight: '500' }}>
+                    {scanResults && scanResults.length > 0 ? (
+                      `${scanResults[0].strategy} (${scanResults[0].confidence}%)`
+                    ) : 'SYSTEM READY'}
+                  </div>
+                  <div style={{ fontSize: '0.7rem', color: '#8b8ba8', fontWeight: 'bold', textTransform: 'uppercase' }}>
+                    LAST SCAN: {scanTime}
+                  </div>
+                </div>
+              </div>
+
+              {/* Right Panel: AI Reasoning Console */}
+              <div className="glass-card" style={{ padding: '20px', display: 'flex', flexDirection: 'column', minHeight: '400px' }}>
+                <h4 style={{ margin: '0 0 5px 0', color: '#00d2ff', fontSize: '0.85rem', fontWeight: 'bold', letterSpacing: '1px', textTransform: 'uppercase' }}>AI REASONING CONSOLE</h4>
+                <div style={{ fontSize: '0.7rem', color: '#8b8ba8', marginBottom: '15px', fontWeight: 'bold', textTransform: 'uppercase' }}>LAST SCAN: {scanTime}</div>
+                <div style={{
+                  flex: 1,
+                  background: '#0d1117',
+                  borderRadius: '8px',
+                  padding: '16px',
+                  fontFamily: 'Consolas, Monaco, monospace',
+                  fontSize: '0.85rem',
+                  lineHeight: '1.5',
+                  overflowY: 'auto',
+                  border: '1px solid rgba(255,255,255,0.05)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '8px'
+                }}>
+                  {scanConsoleLines && scanConsoleLines.length > 0 ? (
+                    scanConsoleLines.map((line, idx) => {
+                      let color = '#c9d1d9'
+                      if (line.tag === 'system') color = '#00ff41'
+                      else if (line.tag === 'highlight') color = '#00d2ff'
+                      else if (line.tag === 'error') color = '#f38ba8'
+                      
+                      return (
+                        <div key={idx} style={{ color }}>
+                          {line.timestamp ? <span style={{ color: '#8b8ba8', marginRight: '8px' }}>[{line.timestamp}]</span> : null}
+                          <span>{line.message}</span>
+                        </div>
+                      )
+                    })
+                  ) : (
+                    <div style={{ color: '#00ff41' }}>
+                      &gt; Initializing Jarvis Brain...<br />
+                      &gt; System status: ONLINE<br />
+                      &gt; Awaiting deep market scan...
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
+
+            {/* Bottom Live Ticker tapes */}
+            <div className="glass-card" style={{ padding: '20px' }}>
+              <h4 style={{ margin: '0 0 15px 0', color: '#00d2ff', fontSize: '0.85rem', fontWeight: 'bold', letterSpacing: '1px', textTransform: 'uppercase' }}>Real-time Feed Ticker Tapes</h4>
+              <div className="ticker-widget">
+                {['NIFTY', 'BANKNIFTY', 'FINNIFTY'].map(symbol => {
+                  const q = quotes[symbol] || {}
+                  const ltp = q.last_price || (symbol === 'NIFTY' ? 22450 : symbol === 'BANKNIFTY' ? 47800 : 20900)
+                  const change = q.change || 0
+                  const pct = q.change_percent || 0
+                  return (
+                    <div key={symbol} className="ticker-item" style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <span className="ticker-symbol">{symbol}</span>
+                      <span className="ticker-price">₹{ltp.toFixed(2)}</span>
+                      <span className={`ticker-change ${change >= 0 ? 'up' : 'down'}`} style={{ color: change >= 0 ? '#a6e3a1' : '#f38ba8', fontSize: '0.75rem' }}>
+                        {change >= 0 ? '▲' : '▼'} {Math.abs(change).toFixed(2)} ({Math.abs(pct).toFixed(2)}%)
+                      </span>
+                      <span style={{ fontSize: '0.68rem', color: 'var(--color-text-muted)' }}>Vol: {q.volume ? (q.volume / 1000).toFixed(0) + 'K' : '—'}</span>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+
             {/* Quote grid for active positions */}
             {positions.length > 0 && (
-              <div style={{ marginTop: '20px' }}>
-                <h4 style={{ color: 'var(--color-text-muted)', fontSize: '0.8rem', marginBottom: '12px', textTransform: 'uppercase' }}>Active Position Quotes</h4>
+              <div className="glass-card" style={{ padding: '20px' }}>
+                <h4 style={{ color: 'var(--color-text-muted)', fontSize: '0.8rem', marginBottom: '12px', textTransform: 'uppercase', margin: '0 0 15px 0' }}>Active Position Quotes</h4>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '12px' }}>
                   {positions.map((pos, i) => {
                     const q = quotes[pos.symbol]
@@ -1519,7 +2048,20 @@ function App() {
                 <div style={{ display: 'flex', gap: '10px' }}>
                   {isEditingNotif ? (
                     <>
-                      <button className="btn btn-success btn-sm" onClick={() => { setIsEditingNotif(false); showToast('Telegram settings saved locally', 'success') }}>💾 Save</button>
+                      <button className="btn btn-success btn-sm" onClick={async () => {
+                        setLoading(true)
+                        try {
+                          await apiPost('/api/v1/config', {
+                            user_id: userId,
+                            settings: { telegram_token: telegramToken, telegram_chat_id: telegramChatId }
+                          })
+                          showToast('Telegram settings saved!', 'success')
+                          setIsEditingNotif(false)
+                          fetchConfig()
+                        } catch (err) {
+                          showToast(err.message, 'error')
+                        } finally { setLoading(false) }
+                      }} disabled={loading}>{loading ? 'Saving…' : '💾 Save'}</button>
                       <button className="btn btn-secondary btn-sm" onClick={() => setIsEditingNotif(false)}>Cancel</button>
                     </>
                   ) : (
@@ -1573,8 +2115,20 @@ function App() {
                 <button className="btn btn-primary btn-sm" onClick={handleTestGemini} disabled={testingGemini || !geminiKey}>
                   {testingGemini ? '⏳ Testing…' : '🧪 Test Connection'}
                 </button>
-                <button className="btn btn-success btn-sm" onClick={() => { showToast('Gemini key saved locally', 'success') }} disabled={!geminiKey}>
-                  💾 Save Key
+                <button className="btn btn-success btn-sm" onClick={async () => {
+                  setLoading(true)
+                  try {
+                    await apiPost('/api/v1/config', {
+                      user_id: userId,
+                      settings: { gemini_key: geminiKey }
+                    })
+                    showToast('Gemini API key saved!', 'success')
+                    fetchConfig()
+                  } catch (err) {
+                    showToast(err.message, 'error')
+                  } finally { setLoading(false) }
+                }} disabled={!geminiKey || loading}>
+                  {loading ? 'Saving…' : '💾 Save Key'}
                 </button>
                 <div style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
                   {geminiKey ? '🟢 API key configured' : '🔴 Not configured'}
